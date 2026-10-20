@@ -42,6 +42,11 @@
     #event-card, #new-modal > div { touch-action: pan-y; }
     #event-card { max-height: calc(100dvh - 16px); overflow-y: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
     #rel-modal > div { touch-action: pan-y; }
+    /* ▶ sempre visível no celular (não existe "passar o mouse"), pequeno mas fácil de acertar */
+    .event-play { display: flex !important; width: 24px !important; height: 24px !important; top: 4px !important; right: 4px !important; border-radius: 50% !important; background: rgba(255,255,255,.92) !important; color: #4f46e5 !important; font-size: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+    .event-play::before { content: ""; position: absolute; inset: -8px; } /* área de toque maior que o desenho */
+    .event:has(.event-play) .event-title { padding-right: 28px; }
+    .event-compact .event-play { width: 20px !important; height: 20px !important; top: 50% !important; transform: translateY(-50%); }
     /* nome da atividade inteiro: quebra em linhas em vez de cortar em "Check-in…" */
     .event-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
     .event-compact .event-title { -webkit-line-clamp: 2; }
