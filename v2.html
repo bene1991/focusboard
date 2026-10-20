@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -23,7 +23,19 @@
   body:has(#rel-modal:not(.hidden)) #main-view { overflow: hidden; }
   #new-modal, #event-modal, #rel-modal { overscroll-behavior: contain; }
   #new-modal > div, #event-modal > div { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  body { touch-action: manipulation; }
   @media (max-width: 639px) {
+    /* iOS dá zoom ao focar campo com fonte < 16px */
+    input, select, textarea { font-size: 16px !important; }
+    #new-modal input[type=date], #new-modal input[type=time] {
+      -webkit-appearance: none; appearance: none; display: block; box-sizing: border-box;
+      width: 100%; min-width: 0; max-width: 100%; height: 44px; text-align: left; line-height: 1.2;
+    }
+    #new-modal input::-webkit-date-and-time-value { text-align: left; }
+    #new-modal { align-items: flex-start !important; padding: 8px !important; }
+    #new-modal > div { max-height: calc(100dvh - 16px) !important; }
+    #new-modal .p-5 { padding: 16px !important; }
+    #new-save { position: sticky; bottom: 0; box-shadow: 0 0 0 10px #0a0a0a; }
     header { padding: 8px 12px !important; row-gap: 8px !important; }
     #nav-bar { order: 3; width: 100%; flex-wrap: wrap; row-gap: 6px; }
     #hour-labels, #grid-head > div:first-child, #grid-allday > div:first-child { position: sticky; left: 0; z-index: 6; background: #000; }
@@ -1389,7 +1401,8 @@ function abrirNovo(dataInicial) {
   const m = document.getElementById('new-modal');
   m.classList.remove('hidden');
   m.style.display = 'flex';
-  document.getElementById('new-title').focus();
+  // no celular, focar abre o teclado e cobre o formulário
+  if (!matchMedia('(pointer: coarse)').matches) document.getElementById('new-title').focus();
 
   // Lista não carregada ainda: busca e repopula o select sem fechar o modal.
   if (!state.calendars.length) {
