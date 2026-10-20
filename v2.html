@@ -16,11 +16,28 @@
 <script src="https://apis.google.com/js/api.js" async defer></script>
 <style>
   html, body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0a; color: #f4f4f5; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  #app { height: 100vh; height: 100dvh; }
+  #main-view { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  body:has(#new-modal:not(.hidden)) #main-view,
+  body:has(#event-modal:not(.hidden)) #main-view,
+  body:has(#rel-modal:not(.hidden)) #main-view { overflow: hidden; }
+  #new-modal, #event-modal, #rel-modal { overscroll-behavior: contain; }
+  #new-modal > div, #event-modal > div { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 639px) {
+    header { padding: 8px 12px !important; row-gap: 8px !important; }
+    #nav-bar { order: 3; width: 100%; flex-wrap: wrap; row-gap: 6px; }
+    #hour-labels, #grid-head > div:first-child, #grid-allday > div:first-child { position: sticky; left: 0; z-index: 6; background: #000; }
+    #nav-bar #period-label { margin-left: 8px; font-size: 13px; white-space: nowrap; }
+    #nav-bar button { margin-left: 4px !important; }
+    #tz-select { display: none; }
+    #main-view { padding-bottom: 96px !important; }
+  }
   .mono { font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em; }
   .day-col { position: relative; border-left: 1px solid #1f1f21; min-height: 100%; }
   .hour-row { height: 68px; border-top: 1px solid #1f1f21; }
   /* rótulo fica DENTRO da faixa da hora, logo abaixo da linha — não em cima dela */
   .hour-label { font-size: 11px; color: #6b6b73; text-align: right; padding-right: 12px; padding-top: 4px; font-weight: 500; }
+  @media (max-width: 639px) { .hour-label { padding-right: 6px; font-size: 10px; } }
   .event {
     position: absolute; padding: 5px 10px;
     border-radius: 9px; font-size: 13px; line-height: 1.35;
@@ -149,7 +166,7 @@
       </div>
     </div>
 
-    <div class="flex items-center gap-1">
+    <div id="nav-bar" class="flex items-center gap-1">
       <button id="prev-btn" class="w-8 h-8 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-900 flex items-center justify-center">◀</button>
       <button id="today-btn" class="px-3 h-8 rounded-md bg-white text-black text-xs font-semibold hover:bg-neutral-200">Hoje</button>
       <button id="next-btn" class="w-8 h-8 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-900 flex items-center justify-center">▶</button>
@@ -252,8 +269,8 @@
         <input id="new-title" type="text" placeholder="Ex.: Prospecção de clientes"
                class="w-full mb-4 px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm focus:border-sky-500 outline-none">
 
-        <div class="grid grid-cols-3 gap-2 mb-4">
-          <div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+          <div class="col-span-2 sm:col-span-1">
             <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Data</label>
             <input id="new-date" type="date" class="w-full px-2 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
           </div>
@@ -404,7 +421,7 @@ const state = {
   tokenClient: null,
   tz: localStorage.getItem('fb2.tzManual') || Intl.DateTimeFormat().resolvedOptions().timeZone,
   calendarTz: null,
-  view: localStorage.getItem('fb2.view') || 'week',
+  view: localStorage.getItem('fb2.view') || (innerWidth < 640 ? 'day' : 'week'),
   fds: localStorage.getItem('fb2.fds') !== '0',   // mostrar sábado e domingo
   colors: null,      // paleta oficial do Google (events + calendars)
   calColors: {},     // cor de fundo de cada calendário
@@ -861,7 +878,8 @@ function visibleDays() {
 
 function applyGridColumns() {
   const n = visibleDays().length;
-  const cols = `64px repeat(${n}, 1fr)`;
+  // No celular a semana não cabe: coluna com largura mínima e rolagem lateral.
+  const cols = innerWidth < 640 ? `44px repeat(${n}, minmax(${n === 1 ? 0 : 130}px, 1fr))` : `64px repeat(${n}, 1fr)`;
   for (const id of ['grid-head', 'grid-allday', 'grid-body'])
     document.getElementById(id).style.gridTemplateColumns = cols;
 }
