@@ -37,6 +37,11 @@
     #new-modal .p-5 { padding: 16px !important; }
     #new-save { position: sticky; bottom: 0; box-shadow: 0 0 0 10px #0a0a0a; }
     /* cabeçalho de uma linha só; o resto fica no menu ⋯ */
+    /* modais no celular: o cartão rola por dentro e o fundo não se mexe */
+    #event-modal, #new-modal, #rel-modal { touch-action: none; align-items: flex-start !important; padding: 8px !important; }
+    #event-card, #new-modal > div { touch-action: pan-y; }
+    #event-card { max-height: calc(100dvh - 16px); overflow-y: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+    #rel-modal > div { touch-action: pan-y; }
     /* ultra-compacto: o calendário é o que importa */
     header { padding: 4px 8px !important; }
     header button { height: 28px !important; font-size: 12px !important; }
