@@ -90,6 +90,15 @@
   .event-planned { background: rgba(56,189,248,0.15); border-left: 3px solid #38bdf8; color: #bae6fd; }
   .event-realized { background: rgba(34,197,94,0.15); border-left: 3px solid #22c55e; color: #bbf7d0; }
   .event-active { background: rgba(239,68,68,0.28); border-left: 3px solid #ef4444; color: #fecaca; box-shadow: 0 0 24px rgba(239,68,68,0.35); }
+  /* sessão rodando dentro de uma tarefa planejada: o bloco enche em vez de abrir outro ao lado */
+  .event-seguindo { background: #8f95c9 !important; }
+  .event-fill { position: absolute; left: 0; right: 0; z-index: 0; background: linear-gradient(#5b63b8, #4a52a8); border-bottom: 3px solid #ef4444; transition: height .6s linear; pointer-events: none; }
+  .event-fill::after { content: ""; position: absolute; right: 8px; bottom: -9px; width: 12px; height: 12px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.35); }
+  .event-seguindo > *:not(.event-fill):not(.event-play):not(.alca) { position: relative; z-index: 1; }
+  .event-seguindo.fill-claro .event-title, .event-seguindo.fill-claro .event-time { color: #fff; }
+  .fill-info { font-weight: 600; }
+  .fill-info.alem { color: #b91c1c; }
+  .event-seguindo.fill-claro .fill-info.alem { color: #fecaca; }
   .event-title { font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .event-compact { padding: 0 9px; font-size: 12px; justify-content: center; border-radius: 7px; }
   .dia-btn {
@@ -1006,7 +1015,19 @@ function renderDayColumns() {
       }
     }
     // events — com layout de colunas pra sobreposições (estilo Google Calendar)
-    for (const [ev, lane, lanes] of layoutDay(dayEvents)) html += renderEvent(ev, lane, lanes);
+    let lista = dayEvents;
+    const sessAtiva = state.session;
+    const origem = sessAtiva && dayEvents.find(e => e.id === sessAtiva.sourceEventId && e._kind === 'planned');
+    if (origem) {
+      lista = dayEvents.filter(e => e.id !== sessAtiva.gEventId);
+      const i = sessaoDe(origem), real = state.events.find(e => e.id === sessAtiva.gEventId);
+      if (i && real) {
+        const trecho = (ini, fim) => ({ ...real, start: { dateTime: new Date(ini).toISOString() }, end: { dateTime: new Date(fim).toISOString() } });
+        if (i.s0 < i.ps) lista.push(trecho(i.s0, Math.min(i.ps, i.s1)));
+        if (i.s1 > i.pe) lista.push(trecho(Math.max(i.pe, i.s0), i.s1));
+      }
+    }
+    for (const [ev, lane, lanes] of layoutDay(lista)) html += renderEvent(ev, lane, lanes);
     html += '</div>';
     container.insertAdjacentHTML('beforeend', html);
   }
@@ -1186,6 +1207,49 @@ function corDoEvento(ev, semRecursao = false) {
 // Texto sempre preto nos blocos, como no bloco "Financeiro".
 function corDoTexto() { return '#1a1a1a'; }
 
+// Sessão rodando em cima de uma tarefa planejada: devolve a parte do tempo focado
+// que cai DENTRO do horário previsto (vira preenchimento) e os limites reais.
+// ponytail: conta do início até agora, pausas incluídas; descontar pausas se incomodar.
+function sessaoDe(ev) {
+  const sess = state.session;
+  if (!sess || !sess.sourceEventId || sess.sourceEventId !== ev.id || !ev.start.dateTime) return null;
+  const ps = +new Date(ev.start.dateTime), pe = +new Date(ev.end.dateTime || ev.start.dateTime);
+  if (pe <= ps) return null;
+  const s1 = Date.now();
+  const a = Math.max(sess.startedAt, ps), b = Math.max(a, Math.min(s1, pe));
+  return { ps, pe, a, b, s0: sess.startedAt, s1 };
+}
+function fmtDur(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)}h${pad(m % 60)}` : `${m}min`;
+}
+function textoPreenchimento(i) {
+  const feitos = fmtDur(i.s1 - i.s0) + ' feitos';
+  return i.s1 > i.pe ? `${feitos} · <span class="fill-info alem">+${fmtDur(i.s1 - i.pe)} além</span>` : `${feitos} · faltam ${fmtDur(i.pe - i.s1)}`;
+}
+// Chamado a cada segundo: mexe só no DOM, sem redesenhar a grade.
+function atualizarPreenchimento() {
+  if (!state.session) return;
+  document.querySelectorAll('.event-seguindo').forEach(el => {
+    const ev = state.events.find(x => x.id === el.dataset.id);
+    const i = ev && sessaoDe(ev);
+    const fill = el.querySelector('.event-fill');
+    if (!i || !fill) return;
+    fill.style.top = ((i.a - i.ps) / (i.pe - i.ps) * 100) + '%';
+    fill.style.height = ((i.b - i.a) / (i.pe - i.ps) * 100) + '%';
+    const info = el.querySelector('.fill-info-linha');
+    if (info) info.innerHTML = textoPreenchimento(i);
+  });
+  // passou do fim previsto: o trecho extra é um bloco à parte, então precisa redesenhar (no máximo a cada 30s)
+  const agora = Date.now();
+  if (agora - (state.ultimoRedesenho || 0) > 30000 && !document.querySelector('.arrasto') &&
+      document.querySelectorAll('#new-modal:not(.hidden), #event-modal:not(.hidden)').length === 0) {
+    const src = state.events.find(x => x.id === state.session.sourceEventId);
+    const i = src && sessaoDe(src);
+    if (i && i.s1 > i.pe) { state.ultimoRedesenho = agora; renderDayColumns(); }
+  }
+}
+
 function renderEvent(ev, lane = 0, lanes = 1) {
   const start = new Date(ev.start.dateTime || ev.start.date);
   const end = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime || ev.start.date);
@@ -1200,7 +1264,8 @@ function renderEvent(ev, lane = 0, lanes = 1) {
   const left = lane * width;
   const isActive = state.session && state.session.gEventId === ev.id;
   const timeStr = `${zHm(start)}–${zHm(end)}`;
-  const playBtn = (ev._kind === 'planned' && !isActive)
+  const seguindo = ev._kind === 'planned' ? sessaoDe(ev) : null;
+  const playBtn = (ev._kind === 'planned' && !isActive && !seguindo)
     ? `<button class="event-play" data-id="${ev.id}" title="Iniciar sessão real">▶</button>`
     : '';
   // Bloco curto: título e horário na MESMA linha, pra o tempo ficar sempre à vista.
@@ -1218,6 +1283,14 @@ function renderEvent(ev, lane = 0, lanes = 1) {
     estilo = `background:${bg}; color:${fg}; ${tracejado}`;
   }
   if (ev._done) cls += ' event-done';
+  let fillHtml = '', infoHtml = '';
+  if (seguindo) {
+    const topo = (seguindo.a - seguindo.ps) / (seguindo.pe - seguindo.ps) * 100;
+    const alt = (seguindo.b - seguindo.a) / (seguindo.pe - seguindo.ps) * 100;
+    cls += ' event-seguindo' + (topo < 15 && alt > 15 ? ' fill-claro' : '');
+    fillHtml = `<div class="event-fill" style="top:${topo}%; height:${alt}%"></div>`;
+    infoHtml = compact ? '' : `<div class="event-time fill-info-linha">${textoPreenchimento(seguindo)}</div>`;
+  }
 
   return `
     <div class="event ${cls} ${compact ? 'event-compact' : ''}" data-id="${escapeHtml(ev.id)}"
@@ -1225,6 +1298,8 @@ function renderEvent(ev, lane = 0, lanes = 1) {
          title="${escapeHtml((ev.summary||'(sem título)') + ' · ' + timeStr + (ev._source ? ' · ' + ev._source : ''))}">
       <div class="event-title">${ev._kind === 'task' ? (ev._done ? '☑ ' : '☐ ') : ''}${escapeHtml(ev.summary || '(sem título)')}${compact ? `<span class="event-time-inline">${timeStr}</span>` : ''}</div>
       ${compact ? '' : `<div class="event-time">${timeStr}</div>`}
+      ${infoHtml}
+      ${fillHtml}
       ${playBtn}
     </div>
   `;
@@ -2109,7 +2184,7 @@ function atualizarLinhaAgora() {
 }
 
 function tickTimer() {
-  if (state.session && !state.session.isPaused) updateTimerDisplay();
+  if (state.session && !state.session.isPaused) { updateTimerDisplay(); atualizarPreenchimento(); }
 }
 
 function showOnboarding() {
