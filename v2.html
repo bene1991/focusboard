@@ -1,0 +1,2161 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocusBoard 2 — Calendar + Tracking</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js" async defer></script>
+<style>
+  html, body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0a; color: #f4f4f5; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em; }
+  .day-col { position: relative; border-left: 1px solid #1f1f21; min-height: 100%; }
+  .hour-row { height: 68px; border-top: 1px solid #1f1f21; }
+  /* rótulo fica DENTRO da faixa da hora, logo abaixo da linha — não em cima dela */
+  .hour-label { font-size: 11px; color: #6b6b73; text-align: right; padding-right: 12px; padding-top: 4px; font-weight: 500; }
+  .event {
+    position: absolute; padding: 5px 10px;
+    border-radius: 9px; font-size: 13px; line-height: 1.35;
+    overflow: hidden; cursor: pointer;
+    transition: box-shadow .14s, filter .14s; z-index: 2;
+    display: flex; flex-direction: column; gap: 1px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.10);
+  }
+  .event:hover { z-index: 20; filter: brightness(1.06); box-shadow: 0 4px 14px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(0,0,0,0.12); }
+  .event-planned { background: rgba(56,189,248,0.15); border-left: 3px solid #38bdf8; color: #bae6fd; }
+  .event-realized { background: rgba(34,197,94,0.15); border-left: 3px solid #22c55e; color: #bbf7d0; }
+  .event-active { background: rgba(239,68,68,0.28); border-left: 3px solid #ef4444; color: #fecaca; box-shadow: 0 0 24px rgba(239,68,68,0.35); }
+  .event-title { font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-compact { padding: 0 9px; font-size: 12px; justify-content: center; border-radius: 7px; }
+  .dia-btn {
+    width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+    background: #171717; border: 1px solid #262626; color: #a1a1aa;
+    font-size: 12px; font-weight: 600;
+  }
+  .dia-btn:hover { background: #262626; }
+  .dia-ativo { background: #0ea5e9; border-color: #0ea5e9; color: #000; }
+  .paleta-btn {
+    width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+    border: 2px solid transparent; transition: transform 0.1s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .paleta-btn:hover { transform: scale(1.12); }
+  .paleta-ativa { border-color: #fff; box-shadow: 0 0 0 2px #0a0a0a, 0 0 0 4px #fff; }
+  .event-time-inline { font-weight: 500; opacity: 0.72; margin-left: 7px; font-size: 11.5px; }
+  .event-done { opacity: 0.5; }
+  .event-done .event-title { text-decoration: line-through; }
+  .event-time { font-size: 12px; opacity: 0.72; font-weight: 500; }
+  .event-play {
+    position: absolute; top: 3px; right: 3px;
+    width: 22px; height: 22px; border-radius: 5px;
+    background: rgba(0,0,0,0.5); color: #fff;
+    display: none; align-items: center; justify-content: center;
+    font-size: 10px; cursor: pointer; z-index: 30;
+  }
+  .event:hover .event-play { display: flex; }
+  .event-play:hover { background: #ef4444; }
+  /* ---- Relatórios: paleta validada para fundo escuro (CVD ΔE 26.8) ---- */
+  .viz {
+    --serie-plan: #3987e5;   /* planejado */
+    --serie-real: #d95926;   /* realizado */
+    --ink-1: #f4f4f5; --ink-2: #a1a1aa; --ink-3: #71717a;
+    --grade: #262626;
+  }
+  .viz text { font-family: 'Inter', system-ui, sans-serif; }
+  .viz .rotulo { fill: var(--ink-2); font-size: 12px; }
+  .viz .valor  { fill: var(--ink-1); font-size: 11px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .viz .eixo   { stroke: var(--grade); stroke-width: 1; }
+  .viz .barra  { rx: 4; }
+  .viz .barra:hover { filter: brightness(1.18); }
+  .tile { background: #111; border: 1px solid #222; border-radius: 12px; padding: 16px 18px; }
+  .tile-num { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .tile-rot { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #71717a; margin-bottom: 6px; }
+  .legenda-ponto { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .rel-tabela th, .rel-tabela td { padding: 7px 10px; border-bottom: 1px solid #1c1c1c; text-align: right; }
+  .rel-tabela th:first-child, .rel-tabela td:first-child { text-align: left; }
+  .rel-tabela th { color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+
+  .day-col { cursor: cell; }
+  .event-movivel { cursor: grab; }
+  .event-arrastando { opacity: 0.9; z-index: 40 !important; box-shadow: 0 10px 30px rgba(0,0,0,0.7); cursor: grabbing; }
+  .alca {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
+    cursor: ns-resize; z-index: 5;
+  }
+  .alca::after {
+    content: ''; position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%);
+    width: 22px; height: 2px; border-radius: 2px; background: rgba(0,0,0,0.35);
+    opacity: 0; transition: opacity .12s;
+  }
+  .event:hover .alca::after { opacity: 1; }
+  .arrasto {
+    position: absolute; left: 2px; right: 2px; z-index: 25;
+    background: rgba(56,189,248,0.35); border: 1.5px solid #38bdf8;
+    border-radius: 6px; pointer-events: none;
+    display: flex; align-items: flex-start; justify-content: center;
+    font-size: 11px; font-weight: 600; color: #fff; padding-top: 2px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .now-line {
+    position: absolute; left: 0; right: 0;
+    height: 2px; background: #ef4444; z-index: 15;
+    box-shadow: 0 0 8px rgba(239,68,68,0.7);
+    pointer-events: none;
+  }
+  .now-line::before {
+    content: ''; position: absolute; left: -5px; top: -4px;
+    width: 10px; height: 10px; border-radius: 50%; background: #ef4444;
+  }
+  .event-task { background: rgba(168,85,247,0.15); border-left: 3px solid #a855f7; color: #e9d5ff; }
+  .allday-cell {
+    border-left: 1px solid #171717; padding: 3px;
+    display: flex; flex-direction: column; gap: 2px;
+    min-height: 24px; max-height: 76px; overflow-y: auto;
+  }
+  .allday-chip {
+    background: rgba(168,85,247,0.15); border-left: 3px solid #a855f7; color: #e9d5ff;
+    border-radius: 5px; padding: 3px 7px; font-size: 12px; line-height: 1.25;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  .allday-chip:hover { background: rgba(168,85,247,0.3); }
+  .allday-chip.done { opacity: 0.45; text-decoration: line-through; }
+  .today-col-bg { background: rgba(56,189,248,0.02); }
+  .today-header { color: #38bdf8; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #0a0a0a; }
+  ::-webkit-scrollbar-thumb { background: #262626; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #404040; }
+  input, textarea { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="app" class="h-screen overflow-hidden flex flex-col">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-5 py-3 border-b border-neutral-900 gap-3 flex-wrap">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-sky-500 flex items-center justify-center font-bold text-black">F</div>
+      <div>
+        <h1 class="text-sm font-bold tracking-tight">FocusBoard</h1>
+        <p class="text-[10px] text-neutral-500 leading-none">Calendar + tracking real · <span id="build-tag">v3.7</span></p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1">
+      <button id="prev-btn" class="w-8 h-8 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-900 flex items-center justify-center">◀</button>
+      <button id="today-btn" class="px-3 h-8 rounded-md bg-white text-black text-xs font-semibold hover:bg-neutral-200">Hoje</button>
+      <button id="next-btn" class="w-8 h-8 rounded-md text-neutral-500 hover:text-white hover:bg-neutral-900 flex items-center justify-center">▶</button>
+      <span id="period-label" class="ml-3 text-sm font-semibold text-neutral-300"></span>
+      <button id="view-btn" class="ml-3 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">Semana</button>
+      <button id="fds-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800" title="Mostrar ou esconder sábado e domingo">Fim de semana</button>
+      <button id="rel-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">📊 Relatórios</button>
+      <button id="new-btn" class="ml-1 px-3 h-8 rounded-md bg-sky-500 hover:bg-sky-400 text-black text-xs font-semibold">+ Novo</button>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <select id="tz-select" title="Fuso usado para exibir os horários"
+              class="px-2 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-400 text-xs hover:bg-neutral-800 cursor-pointer"></select>
+      <button id="gcal-btn" class="px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800 flex items-center gap-1.5">
+        <span id="gcal-status">Conectar Google</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Onboarding -->
+  <div id="onboarding" class="flex-1 flex items-center justify-center px-6 py-20 hidden">
+    <div class="max-w-md text-center">
+      <div class="text-6xl mb-6">📅</div>
+      <h2 class="text-2xl font-bold mb-3">Conecte seu Google Calendar</h2>
+      <p class="text-sm text-neutral-400 mb-6 leading-relaxed">
+        O FocusBoard usa seu Google Calendar como fonte de eventos.<br>
+        Quando você inicia uma sessão de foco, um evento é criado num calendário chamado
+        <span class="text-emerald-400 font-semibold">FocusBoard — Realizado</span>
+        no seu Google, mostrando o que você realmente fez.
+      </p>
+      <button id="connect-btn" class="bg-sky-500 hover:bg-sky-400 text-black font-semibold px-6 py-3 rounded-lg transition">
+        Conectar meu Google
+      </button>
+      <p class="text-[11px] text-neutral-600 mt-6">Você pode desconectar a qualquer momento.</p>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading" class="flex-1 flex items-center justify-center hidden">
+    <div class="text-sm text-neutral-500">Carregando eventos…</div>
+  </div>
+
+  <!-- Main view -->
+  <main id="main-view" class="flex-1 overflow-auto hidden" style="padding-bottom: 80px;">
+    <!-- Day headers (sticky) -->
+    <div id="grid-head" class="sticky top-0 z-10 bg-black grid border-b border-neutral-900" style="grid-template-columns: 64px repeat(7, 1fr);">
+      <div></div>
+      <div id="day-headers" class="contents"></div>
+    </div>
+    <!-- All-day / tasks strip -->
+    <div id="grid-allday" class="grid border-b border-neutral-900 bg-black" style="grid-template-columns: 64px repeat(7, 1fr);">
+      <div class="text-[9px] uppercase tracking-widest text-neutral-600 flex items-center justify-end pr-2">tarefas</div>
+      <div id="allday-row" class="contents"></div>
+    </div>
+    <!-- Grid body -->
+    <div id="grid-body" class="grid" style="grid-template-columns: 64px repeat(7, 1fr);">
+      <div id="hour-labels"></div>
+      <div id="day-columns" class="contents"></div>
+    </div>
+  </main>
+
+  <!-- Aviso de reconexão: não apaga a grade, só pede um clique -->
+  <div id="aviso-reconectar" class="hidden fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-lg bg-amber-950 border border-amber-800 shadow-xl">
+    <span class="text-sm text-amber-200">O acesso ao Google expirou.</span>
+    <button id="aviso-btn" class="px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold">Reconectar</button>
+  </div>
+
+  <!-- Relatórios -->
+  <div id="rel-modal" class="fixed inset-0 z-40 hidden items-start justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+    <div class="viz w-full max-w-4xl rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl my-4">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-neutral-900 sticky top-0 bg-neutral-950 rounded-t-xl">
+        <div>
+          <h3 class="text-lg font-bold">Produtividade</h3>
+          <p id="rel-periodo" class="text-[11px] text-neutral-500"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="rel-range" class="px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs outline-none">
+            <option value="week">Esta semana</option>
+            <option value="prev">Semana passada</option>
+            <option value="30">Últimos 30 dias</option>
+          </select>
+          <button id="rel-tabela" class="px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-400 text-xs hover:bg-neutral-800">Ver tabela</button>
+          <button id="rel-close" class="text-neutral-500 hover:text-white text-xl leading-none px-1">×</button>
+        </div>
+      </div>
+      <div id="rel-corpo" class="p-6"></div>
+    </div>
+  </div>
+
+  <!-- Novo evento -->
+  <div id="new-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div class="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 id="new-modal-title" class="text-lg font-bold">Novo evento</h3>
+          <button id="new-close" class="text-neutral-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+
+        <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Título</label>
+        <input id="new-title" type="text" placeholder="Ex.: Prospecção de clientes"
+               class="w-full mb-4 px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm focus:border-sky-500 outline-none">
+
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <div>
+            <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Data</label>
+            <input id="new-date" type="date" class="w-full px-2 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+          </div>
+          <div>
+            <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Início</label>
+            <input id="new-start" type="time" step="300" class="w-full px-2 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+          </div>
+          <div>
+            <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Fim</label>
+            <input id="new-end" type="time" step="300" class="w-full px-2 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+          </div>
+        </div>
+
+        <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Repetir</label>
+        <select id="new-repeat" class="w-full mb-3 px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+          <option value="none">Não repete</option>
+          <option value="daily">Todos os dias</option>
+          <option value="weekdays">Segunda a sexta</option>
+          <option value="weekly">Toda semana, neste dia</option>
+          <option value="monthly">Todo mês, neste dia</option>
+          <option value="custom">Dias específicos…</option>
+        </select>
+
+        <div id="new-days" class="hidden mb-3">
+          <div class="flex gap-1.5">
+            ${''}
+          </div>
+        </div>
+
+        <div id="new-until-wrap" class="hidden mb-4">
+          <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Repetir até (opcional)</label>
+          <input id="new-until" type="date" class="w-full px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+        </div>
+
+        <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Calendário</label>
+        <select id="new-cal" class="w-full mb-4 px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500"></select>
+
+        <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-1">Notificação</label>
+        <div class="flex gap-2 mb-4">
+          <select id="new-notif" class="flex-1 px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+            <option value="">Sem notificação</option>
+            <option value="0">Na hora do evento</option>
+            <option value="5">5 minutos antes</option>
+            <option value="10" selected>10 minutos antes</option>
+            <option value="15">15 minutos antes</option>
+            <option value="30">30 minutos antes</option>
+            <option value="60">1 hora antes</option>
+            <option value="120">2 horas antes</option>
+            <option value="1440">1 dia antes</option>
+          </select>
+          <select id="new-notif-tipo" class="px-3 py-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-sm outline-none focus:border-sky-500">
+            <option value="popup">Pop-up</option>
+            <option value="email">E-mail</option>
+          </select>
+        </div>
+
+        <label class="block text-[11px] uppercase tracking-wider text-neutral-500 mb-2">Cor</label>
+        <div id="new-palette" class="flex flex-wrap gap-2 mb-5"></div>
+
+        <div id="new-error" class="hidden mb-3 text-sm text-red-400"></div>
+        <button id="new-save" class="w-full px-4 py-3 rounded-lg bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm">Criar no Google Agenda</button>
+        <p id="new-hint" class="hidden text-[11px] text-neutral-500 mt-2"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detalhes do evento -->
+  <div id="event-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div id="event-card" class="w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl overflow-hidden">
+      <div id="event-modal-bar" style="height:5px; background:#3f51b5;"></div>
+      <div class="p-5">
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <h3 id="event-modal-title" class="text-lg font-bold leading-snug"></h3>
+          <button id="event-modal-close" class="text-neutral-500 hover:text-white text-xl leading-none shrink-0">×</button>
+        </div>
+        <dl id="event-modal-body" class="space-y-3 text-sm"></dl>
+
+        <div class="mt-5 pt-4 border-t border-neutral-900">
+          <div class="text-[11px] uppercase tracking-wider text-neutral-500 mb-2">Cor desta atividade</div>
+          <div id="event-modal-palette" class="flex flex-wrap gap-2"></div>
+          <p class="text-[11px] text-neutral-600 mt-2">Vale para todas as ocorrências com este nome. Fica salvo só aqui, não altera o Google.</p>
+        </div>
+
+        <div class="flex items-center gap-2 mt-5">
+          <button id="event-modal-start" class="flex-1 px-4 py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-black font-semibold text-sm">▶ Focar nisso agora</button>
+          <a id="event-modal-link" target="_blank" rel="noopener"
+             class="px-4 py-2.5 rounded-lg border border-neutral-800 text-neutral-400 hover:text-white hover:bg-neutral-900 text-sm">Abrir no Google</a>
+        </div>
+        <div id="event-modal-owned" class="flex items-center gap-2 mt-2">
+          <button id="event-modal-edit" class="flex-1 px-4 py-2.5 rounded-lg border border-neutral-800 text-neutral-300 hover:bg-neutral-900 text-sm">✏️ Editar</button>
+          <button id="event-modal-delete" class="flex-1 px-4 py-2.5 rounded-lg border border-red-900/60 text-red-400 hover:bg-red-950/40 text-sm">🗑 Apagar sessão</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session bar (fixed) -->
+  <div id="session-bar" class="fixed bottom-0 left-0 right-0 border-t border-neutral-900 bg-black/95 backdrop-blur px-5 py-3 z-30">
+    <div id="session-idle" class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-2 h-2 rounded-full bg-neutral-700"></div>
+        <span class="text-sm text-neutral-500">Nada rodando</span>
+      </div>
+      <button id="start-free-btn" class="text-xs px-4 py-2 rounded-md bg-sky-500 text-black font-semibold hover:bg-sky-400 transition">
+        ▶ Iniciar sessão livre
+      </button>
+    </div>
+    <div id="session-active" class="hidden flex items-center justify-between gap-3 flex-wrap">
+      <div class="flex items-center gap-3 min-w-0 flex-1">
+        <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+        <div class="min-w-0">
+          <div class="text-[10px] uppercase tracking-wider text-red-400">Focando em</div>
+          <div class="text-sm font-semibold truncate" id="active-title">—</div>
+        </div>
+      </div>
+      <div class="mono text-2xl font-bold tabular-nums" id="active-timer">00:00:00</div>
+      <div class="flex items-center gap-2">
+        <button id="pause-btn" class="px-3 py-2 rounded-md bg-neutral-900 border border-neutral-800 text-xs hover:bg-neutral-800">⏸ Pausar</button>
+        <button id="stop-btn" class="px-3 py-2 rounded-md bg-red-500 hover:bg-red-400 text-black font-semibold text-xs">⏹ Parar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const CLIENT_ID = '804440259127-hbskdtqibq9r1art74vvcmd9365uig8k.apps.googleusercontent.com';
+const SCOPE = 'https://www.googleapis.com/auth/calendar';
+const REALIZADO_NAME = 'FocusBoard — Realizado';
+const HOUR_START = 0, HOUR_END = 23, HOUR_HEIGHT = 68;
+const WEEKDAYS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+// Bump quando os escopos OAuth mudarem — força reconsentir em vez de dar 403 silencioso.
+const SCOPE_VERSION = '3';
+if (localStorage.getItem('fb2.scopeV') !== SCOPE_VERSION) {
+  localStorage.removeItem('fb2.token');
+  localStorage.setItem('fb2.scopeV', SCOPE_VERSION);
+}
+
+const state = {
+  cursor: new Date(),
+  events: [],
+  calendars: [],
+  realizedCalId: localStorage.getItem('fb2.realizedCalId') || null,
+  session: JSON.parse(localStorage.getItem('fb2.session') || 'null'),
+  token: JSON.parse(localStorage.getItem('fb2.token') || 'null'),
+  tokenClient: null,
+  tz: localStorage.getItem('fb2.tzManual') || Intl.DateTimeFormat().resolvedOptions().timeZone,
+  calendarTz: null,
+  view: localStorage.getItem('fb2.view') || 'week',
+  fds: localStorage.getItem('fb2.fds') !== '0',   // mostrar sábado e domingo
+  colors: null,      // paleta oficial do Google (events + calendars)
+  calColors: {},     // cor de fundo de cada calendário
+  calAccess: {},     // permissão em cada calendário (owner/writer/reader)
+  rrules: {},        // cache das regras de recorrência, por evento-pai
+  renovando: null,   // promessa de renovação de token em andamento
+  tokenResolve: null, tokenReject: null,
+  timerToken: null,
+  conectado: false,
+  baterEmAndamento: false,
+  diaDesenhado: null,
+  email: localStorage.getItem('fb2.email') || null,
+  editando: null,    // evento sendo alterado no formulário
+  // Cores escolhidas por você aqui dentro, por nome de atividade. Vencem as do Google.
+  coresLocais: JSON.parse(localStorage.getItem('fb2.cores') || '{}'),
+  ultimoCal: localStorage.getItem('fb2.ultimoCal') || null,
+  gapiReady: false,
+  loading: false,
+};
+
+// ===== Helpers =====
+function ymd(d) { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); x.setHours(0,0,0,0); return x; }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad(n) { return String(n).padStart(2,'0'); }
+// ===== Fuso horário =====
+// O app renderiza no fuso DO CALENDÁRIO, não no do navegador. Sem isso, quem está
+// em Campo Grande (UTC-4) com o calendário em Araguaina (UTC-3) vê tudo 1h adiantado
+// em relação ao que o Google Agenda mostra.
+const _fmtCache = {};
+function tzFormatter(tz) {
+  if (!_fmtCache[tz]) {
+    _fmtCache[tz] = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+  return _fmtCache[tz];
+}
+// Quebra um instante nas partes civis do fuso de exibição.
+function zParts(d) {
+  const p = {};
+  for (const { type, value } of tzFormatter(state.tz).formatToParts(d)) p[type] = value;
+  const hour = p.hour === '24' ? '00' : p.hour; // en-CA devolve 24 pra meia-noite
+  return {
+    date: `${p.year}-${p.month}-${p.day}`,
+    h: +hour, m: +p.minute,
+    hm: `${hour}:${p.minute}`,
+    dec: +hour + (+p.minute) / 60,
+  };
+}
+function zDate(d) { return zParts(d).date; }
+function zHm(d) { return zParts(d).hm; }
+function zDec(d) { return zParts(d).dec; }
+
+// ===== Google =====
+function waitLibs(cb) {
+  if (window.google && window.google.accounts && window.gapi) return cb();
+  setTimeout(() => waitLibs(cb), 300);
+}
+
+function criarTokenClient() {
+  state.tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: onToken,
+    // Com várias contas Google no navegador, sem essa dica o Google não consegue
+    // renovar em silêncio e abre o seletor de contas — era o que te derrubava.
+    ...(state.email ? { hint: state.email, select_account: false } : {}),
+  });
+}
+
+function initGoogle() {
+  criarTokenClient();
+  gapi.load('client', async () => {
+    await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'] });
+    state.gapiReady = true;
+    if (state.token && state.token.expires_at > Date.now() + 60000) {
+      gapi.client.setToken({ access_token: state.token.access_token });
+      agendarRenovacao();
+      state.conectado = true;
+      onConnected();
+    } else if (state.token) {
+      // Token vencido, mas você já autorizou antes: renova sem pedir nada.
+      pedirToken(false).catch(() => {
+        // já houve conexão antes: mantém a tela e pede um clique
+        state.conectado = true;
+        document.getElementById('onboarding').classList.add('hidden');
+        document.getElementById('main-view').classList.remove('hidden');
+        renderAll();
+        avisarReconectar(true);
+      });
+    } else {
+      showOnboarding();
+    }
+  });
+}
+
+function connectGoogle() {
+  if (!state.tokenClient) { alert('Aguarde bibliotecas carregarem...'); return; }
+  // Primeira vez pede consentimento; depois é silencioso.
+  pedirToken(!state.token).catch(err => alert('Erro na conexão: ' + err.message));
+}
+
+// O token do Google dura 1 hora. Em vez de exigir novo login, pedimos outro
+// silenciosamente — sem pop-up, já que o consentimento continua válido.
+function pedirToken(comConsentimento = false) {
+  if (!state.tokenClient) return Promise.reject(new Error('bibliotecas do Google ainda carregando'));
+  if (state.renovando) return state.renovando;
+
+  state.renovando = new Promise((resolve, reject) => {
+    state.tokenResolve = resolve;
+    state.tokenReject = reject;
+    try {
+      state.tokenClient.requestAccessToken({ prompt: comConsentimento ? 'consent' : '' });
+    } catch (e) { reject(e); }
+    // Se o Google não responder (ex.: sessão caiu e o pop-up foi bloqueado),
+    // não deixa a promessa pendurada pra sempre.
+    setTimeout(() => reject(new Error('tempo esgotado ao renovar o acesso')), 45000);
+  }).finally(() => { state.renovando = null; });
+
+  return state.renovando;
+}
+
+function onToken(resp) {
+  if (resp.error) {
+    const err = new Error(resp.error_description || resp.error);
+    if (state.tokenReject) state.tokenReject(err);
+    state.tokenResolve = state.tokenReject = null;
+    return;
+  }
+  state.token = { access_token: resp.access_token, expires_at: Date.now() + (resp.expires_in || 3600) * 1000 };
+  localStorage.setItem('fb2.token', JSON.stringify(state.token));
+  gapi.client.setToken({ access_token: state.token.access_token });
+  agendarRenovacao();
+  avisarReconectar(false);
+
+  const resolver = state.tokenResolve;
+  state.tokenResolve = state.tokenReject = null;
+  if (resolver) resolver(state.token);
+  if (!state.conectado) { state.conectado = true; onConnected(); }
+}
+
+// Renova sozinho pouco antes de expirar, para você nunca esbarrar no vencimento.
+function agendarRenovacao() {
+  clearTimeout(state.timerToken);
+  if (!state.token) return;
+  const faltam = state.token.expires_at - Date.now() - 5 * 60 * 1000; // 5 min de folga
+  state.timerToken = setTimeout(() => {
+    pedirToken(false).catch(e => console.warn('Renovação automática falhou:', e.message));
+  }, Math.max(30 * 1000, faltam));
+}
+
+// Chamado antes de qualquer operação: garante um token válido na hora.
+async function garantirToken() {
+  if (state.token && state.token.expires_at > Date.now() + 2 * 60 * 1000) return true;
+  try {
+    await pedirToken(false);
+    return true;
+  } catch (e) {
+    console.warn('Não consegui renovar em silêncio:', e.message);
+    return false;
+  }
+}
+
+async function onConnected() {
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('gcal-status').textContent = 'Google ✓';
+  document.getElementById('main-view').classList.remove('hidden');
+  await loadTimezone();
+  await ensureRealizedCalendar();
+  await fetchEvents();
+  renderAll();
+  scrollToNow();
+}
+
+// Fuso de exibição. Padrão: o do Google Agenda, pra bater com o que ele mostra.
+// Se o usuário escolher um no seletor, a escolha dele manda.
+async function loadTimezone() {
+  const escolhido = localStorage.getItem('fb2.tzManual');
+  try {
+    const r = await gapi.client.calendar.settings.get({ setting: 'timezone' });
+    state.calendarTz = (r.result && r.result.value) || null;
+  } catch (err) {
+    console.warn('Não consegui ler o fuso do Google:', err);
+  }
+  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  state.tz = escolhido || state.calendarTz || device;
+  if (state.calendarTz && state.calendarTz !== device) {
+    console.log(`FocusBoard: Google Agenda está em ${state.calendarTz}, seu aparelho em ${device}. Exibindo em ${state.tz}.`);
+  }
+  renderTzSelect();
+}
+
+function renderTzSelect() {
+  const sel = document.getElementById('tz-select');
+  const device = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const opcoes = [];
+  const add = (tz, rotulo) => {
+    if (tz && !opcoes.some(o => o.tz === tz)) opcoes.push({ tz, rotulo });
+  };
+  add(device, 'meu aparelho');
+  add(state.calendarTz, 'Google Agenda');
+  add('America/Campo_Grande');
+  add('America/Sao_Paulo');
+  add('America/Araguaina');
+  add(state.tz);
+
+  sel.innerHTML = opcoes.map(o => {
+    const cidade = o.tz.split('/').pop().replace(/_/g, ' ');
+    const offset = offsetLabel(o.tz);
+    return `<option value="${escapeHtml(o.tz)}" ${o.tz === state.tz ? 'selected' : ''}>🕐 ${escapeHtml(cidade)} ${offset}${o.rotulo ? ' · ' + o.rotulo : ''}</option>`;
+  }).join('');
+}
+
+function offsetLabel(tz) {
+  try {
+    const p = new Intl.DateTimeFormat('en', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find(x => x.type === 'timeZoneName');
+    return p ? p.value.replace('GMT', 'UTC') : '';
+  } catch { return ''; }
+}
+
+async function ensureRealizedCalendar() {
+  if (state.realizedCalId) {
+    // Verify it still exists
+    try { await gapi.client.calendar.calendars.get({ calendarId: state.realizedCalId }); return; }
+    catch(e) { state.realizedCalId = null; localStorage.removeItem('fb2.realizedCalId'); }
+  }
+  try {
+    const list = await gapi.client.calendar.calendarList.list();
+    const existing = (list.result.items||[]).find(c => c.summary === REALIZADO_NAME);
+    if (existing) { state.realizedCalId = existing.id; }
+    else {
+      const created = await gapi.client.calendar.calendars.insert({
+        resource: { summary: REALIZADO_NAME, timeZone: state.tz }
+      });
+      state.realizedCalId = created.result.id;
+      try { await gapi.client.calendar.calendarList.patch({ calendarId: state.realizedCalId, resource: { colorId: '10' } }); } catch(e){}
+    }
+    localStorage.setItem('fb2.realizedCalId', state.realizedCalId);
+  } catch(err) { console.error('Erro ao garantir calendar Realizado:', err); }
+}
+
+// Busca a lista de calendários visíveis do usuário (não só o primary).
+async function loadCalendarList() {
+  try {
+    const resp = await gapi.client.calendar.calendarList.list({ maxResults: 250 });
+    state.calendars = (resp.result.items || []).filter(c => c.selected !== false);
+    // guarda a cor de cada calendário, pra pintar igual ao Google
+    for (const c of state.calendars) {
+      state.calColors[c.id] = c.backgroundColor || null;
+      state.calAccess[c.id] = c.accessRole || 'reader';
+    }
+    const principal = state.calendars.find(c => c.primary);
+    if (principal && principal.id !== state.email) {
+      state.email = principal.id;
+      localStorage.setItem('fb2.email', state.email);
+      criarTokenClient(); // recria já com a dica de conta
+    }
+    if (!state.ultimoCal) {
+      const grav = state.calendars.find(c => c.accessRole === 'owner' && c.primary)
+                || state.calendars.find(c => ['owner','writer'].includes(c.accessRole));
+      if (grav) state.ultimoCal = grav.id;
+    }
+    try {
+      const cores = await gapi.client.calendar.colors.get();
+      state.colors = cores.result;
+    } catch (e) { console.warn('Não consegui ler a paleta do Google:', e); }
+  } catch (err) {
+    console.error('calendarList falhou, caindo pro primary:', err);
+    state.calendars = [{ id: 'primary', summary: 'Principal' }];
+  }
+}
+
+async function fetchEvents(jaTentou = false) {
+  if (!state.token) return;
+  if (!await garantirToken()) { avisarReconectar(true); return; }
+  state.loading = true;
+  const start = startOfWeek(state.cursor);
+  const end = addDays(start, 7);
+  try {
+    if (!state.calendars.length) await loadCalendarList();
+
+    const calJobs = state.calendars.map(cal =>
+      gapi.client.calendar.events.list({
+        calendarId: cal.id, timeMin: start.toISOString(), timeMax: end.toISOString(),
+        singleEvents: true, orderBy: 'startTime', maxResults: 250,
+      }).then(r => (r.result.items || []).map(e => ({
+        ...e,
+        // Tarefas do Google Tasks chegam aqui espelhadas como eventos focusTime —
+        // não precisa da Tasks API pra vê-las.
+        _kind: cal.id === state.realizedCalId ? 'realized'
+             : /focus_?time/i.test(e.eventType || '') ? 'task'
+             : 'planned',
+        _source: cal.summary || cal.id,
+        _calId: cal.id,
+        // guarda de qual evento a sessão veio, pra herdar a cor dele na tela
+        _origemId: (/ID original:\s*(\S+)/.exec(e.description || '') || [])[1] || null,
+      }))).catch(err => {
+        // 401 precisa subir: é o caso de token vencido, tratado com renovação lá fora.
+        // Engolir aqui fazia a semana aparecer vazia em vez de reconectar.
+        if (err.status === 401) throw err;
+        console.warn('Falhou calendário', cal.summary, err);
+        return [];
+      })
+    );
+
+    const calResults = await Promise.all(calJobs);
+
+    // Dedup por id — o mesmo evento pode aparecer em mais de um calendário
+    const seen = new Set();
+    state.events = calResults.flat().filter(e => {
+      const k = e.id + '|' + (e.start.dateTime || e.start.date);
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    console.log(`FocusBoard: ${state.calendars.length} calendários, ${state.events.length} itens na semana`);
+  } catch(err) {
+    console.error(err);
+    if (err.status === 401 && !jaTentou) {
+      // Token recusado: renova e refaz a busca, sem incomodar você.
+      state.loading = false;
+      if (await garantirToken()) return fetchEvents(true);
+      avisarReconectar(true);
+    } else if (err.status === 401) {
+      avisarReconectar(true);
+    }
+    else if (err.status === 403) alert('Erro 403 — verifique se a Google Calendar API está ativada no seu Cloud project.');
+  } finally { state.loading = false; }
+}
+
+function logout() {
+  if (state.token && window.google) { google.accounts.oauth2.revoke(state.token.access_token, ()=>{}); }
+  clearTimeout(state.timerToken);
+  state.conectado = false;
+  state.token = null; state.realizedCalId = null; state.events = []; state.calendars = [];
+  localStorage.removeItem('fb2.token'); localStorage.removeItem('fb2.realizedCalId');
+  showOnboarding();
+}
+
+// ===== Sessões =====
+async function startSession(title, sourceEvent) {
+  if (!state.token) { alert('Conecte o Google primeiro'); return; }
+  if (state.session) await stopSession();
+  const now = new Date();
+  const later = new Date(now.getTime() + 30 * 60 * 1000);
+  const tz = state.tz;
+  const body = {
+    summary: title,
+    description: sourceEvent ? `Sessão real vinculada a: ${sourceEvent.summary || ''}\nID original: ${sourceEvent.id}` : 'Sessão livre — sem evento planejado',
+    start: { dateTime: now.toISOString(), timeZone: tz },
+    end:   { dateTime: later.toISOString(), timeZone: tz },
+    // Sessão iniciada a partir de um evento herda a cor dele; sessão livre fica
+    // com o verde padrão do calendário Realizado.
+    colorId: (sourceEvent && sourceEvent.colorId) || '10',
+  };
+  try {
+    const resp = await gapi.client.calendar.events.insert({ calendarId: state.realizedCalId, resource: body });
+    state.session = {
+      title,
+      gEventId: resp.result.id,
+      gCalendarId: state.realizedCalId,
+      sourceEventId: sourceEvent?.id || null,
+      startedAt: now.getTime(),
+      isPaused: false,
+      pausedElapsed: 0,
+      runningSince: now.getTime(),
+    };
+    saveSession();
+    await fetchEvents();
+    renderAll();
+  } catch(err) { console.error(err); alert('Erro ao criar evento: ' + (err.result?.error?.message || err.message || 'desconhecido')); }
+}
+
+function pauseSession() {
+  if (!state.session || state.session.isPaused) return;
+  state.session.pausedElapsed += Date.now() - state.session.runningSince;
+  state.session.isPaused = true;
+  state.session.runningSince = null;
+  saveSession(); renderSessionBar();
+}
+
+function resumeSession() {
+  if (!state.session || !state.session.isPaused) return;
+  state.session.isPaused = false;
+  state.session.runningSince = Date.now();
+  saveSession(); renderSessionBar();
+}
+
+async function stopSession() {
+  if (!state.session) return;
+  let elapsed = state.session.pausedElapsed;
+  if (!state.session.isPaused && state.session.runningSince) elapsed += Date.now() - state.session.runningSince;
+  const endTime = new Date(state.session.startedAt + elapsed);
+  const tz = state.tz;
+  try {
+    await gapi.client.calendar.events.patch({
+      calendarId: state.session.gCalendarId,
+      eventId: state.session.gEventId,
+      resource: { end: { dateTime: endTime.toISOString(), timeZone: tz } },
+    });
+  } catch(err) { console.error('Erro ao fechar evento:', err); }
+  state.session = null;
+  saveSession();
+  await fetchEvents();
+  renderAll();
+}
+
+// Enquanto a sessão roda, o fim é gravado no Google de tempo em tempo.
+// Sem isso, uma queda no meio deixaria o evento com o fim provisório de +30min
+// e o tempo real trabalhado se perderia.
+async function baterPonto() {
+  if (!state.session || state.session.isPaused || state.baterEmAndamento) return;
+  let elapsed = state.session.pausedElapsed;
+  if (state.session.runningSince) elapsed += Date.now() - state.session.runningSince;
+  state.baterEmAndamento = true;
+  try {
+    if (!await garantirToken()) return;
+    await gapi.client.calendar.events.patch({
+      calendarId: state.session.gCalendarId,
+      eventId: state.session.gEventId,
+      resource: { end: { dateTime: new Date(state.session.startedAt + elapsed).toISOString(), timeZone: state.tz } },
+    });
+    state.session.ultimoPonto = Date.now();
+    saveSession();
+  } catch (err) {
+    console.warn('Não consegui gravar o progresso da sessão:', err);
+  } finally { state.baterEmAndamento = false; }
+}
+
+function startFreeSession() {
+  const title = prompt('O que você tá fazendo agora?', 'Cotação');
+  if (!title || !title.trim()) return;
+  startSession(title.trim(), null);
+}
+
+function saveSession() {
+  if (state.session) localStorage.setItem('fb2.session', JSON.stringify(state.session));
+  else localStorage.removeItem('fb2.session');
+}
+
+// ===== Render =====
+// Dias visíveis: 7 na visão semana, 1 na visão dia.
+function visibleDays() {
+  if (state.view === 'day') return [new Date(state.cursor)];
+  const start = startOfWeek(state.cursor);
+  const dias = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  // Sem fim de semana, a grade vira seg–sex e as colunas ficam mais largas.
+  return state.fds ? dias : dias.filter(d => d.getDay() !== 0 && d.getDay() !== 6);
+}
+
+function applyGridColumns() {
+  const n = visibleDays().length;
+  const cols = `64px repeat(${n}, 1fr)`;
+  for (const id of ['grid-head', 'grid-allday', 'grid-body'])
+    document.getElementById(id).style.gridTemplateColumns = cols;
+}
+
+function renderAll() {
+  applyGridColumns();
+  renderPeriodLabel();
+  renderDayHeaders();
+  renderHourLabels();
+  renderAllDayRow();
+  renderDayColumns();
+  renderSessionBar();
+  document.getElementById('view-btn').textContent = state.view === 'day' ? 'Dia' : 'Semana';
+
+  const fdsBtn = document.getElementById('fds-btn');
+  fdsBtn.textContent = state.fds ? 'Fim de semana' : 'Seg–Sex';
+  fdsBtn.classList.toggle('text-neutral-300', state.fds);
+  fdsBtn.classList.toggle('text-neutral-600', !state.fds);
+  // no modo Dia o botão não muda nada, então fica escondido
+  fdsBtn.style.display = state.view === 'day' ? 'none' : '';
+}
+
+function renderPeriodLabel() {
+  const dias = visibleDays();
+  const label = state.view === 'day'
+    ? dias[0].toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    // último dia visível, que não é sempre o 7º: sem fim de semana a semana acaba na sexta
+    : `${dias[0].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} – ${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short',year:'numeric'})}`;
+  document.getElementById('period-label').textContent = label;
+}
+
+function renderDayHeaders() {
+  const todayStr = zDate(new Date());
+  const el = document.getElementById('day-headers');
+  el.innerHTML = '';
+  for (const d of visibleDays()) {
+    const isToday = ymd(d) === todayStr;
+    el.insertAdjacentHTML('beforeend', `
+      <div class="text-center pt-2 pb-2.5 border-l border-neutral-900">
+        <div class="text-[10px] uppercase tracking-widest mb-1 ${isToday?'text-sky-400':'text-neutral-500'}">${WEEKDAYS[d.getDay()]}</div>
+        <div class="mx-auto flex items-center justify-center rounded-full text-[17px] font-medium
+                    ${isToday ? 'bg-sky-500 text-black font-semibold' : 'text-neutral-300'}"
+             style="width:34px;height:34px">${d.getDate()}</div>
+      </div>
+    `);
+  }
+}
+
+function renderHourLabels() {
+  const el = document.getElementById('hour-labels');
+  el.innerHTML = '';
+  for (let h = HOUR_START; h <= HOUR_END; h++) {
+    el.insertAdjacentHTML('beforeend', `<div class="hour-row"><div class="hour-label">${pad(h)}:00</div></div>`);
+  }
+}
+
+function renderDayColumns() {
+  const todayStr = zDate(new Date());
+  const container = document.getElementById('day-columns');
+  container.innerHTML = '';
+
+  for (const d of visibleDays()) {
+    const dateStr = ymd(d);
+    const isToday = dateStr === todayStr;
+    // só eventos com horário — os de dia inteiro / tarefas vão pra faixa de cima.
+    // O dia é resolvido no fuso do calendário, não no offset cru da string.
+    const dayEvents = state.events.filter(ev =>
+      ev.start.dateTime && zDate(new Date(ev.start.dateTime)) === dateStr);
+    let html = `<div class="day-col ${isToday?'today-col-bg':''}" data-data="${dateStr}" style="height: ${(HOUR_END-HOUR_START+1)*HOUR_HEIGHT}px;">`;
+    // horizontal hour lines
+    for (let h = HOUR_START; h <= HOUR_END; h++) {
+      html += `<div style="position:absolute; top:${(h-HOUR_START)*HOUR_HEIGHT}px; left:0; right:0; border-top:1px solid #1a1a1c; height:0;"></div>`;
+    }
+    // now line
+    if (isToday) {
+      const now = new Date();
+      const nowH = zDec(now);
+      if (nowH >= HOUR_START && nowH <= HOUR_END + 1) {
+        const nowTop = (nowH - HOUR_START) * HOUR_HEIGHT;
+        html += `<div class="now-line" style="top:${nowTop}px;"></div>`;
+      }
+    }
+    // events — com layout de colunas pra sobreposições (estilo Google Calendar)
+    for (const [ev, lane, lanes] of layoutDay(dayEvents)) html += renderEvent(ev, lane, lanes);
+    html += '</div>';
+    container.insertAdjacentHTML('beforeend', html);
+  }
+
+  // botão ▶ inicia direto; clicar no resto do bloco abre os detalhes
+  container.querySelectorAll('.event-play').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const ev = state.events.find(x => x.id === btn.dataset.id);
+      if (ev) startSession(ev.summary || '(sem título)', ev);
+    };
+  });
+  container.querySelectorAll('.event').forEach(el => {
+    const ev = state.events.find(x => x.id === el.dataset.id);
+    // Evento que você pode alterar: arrastar move/redimensiona, e o clique
+    // sem arrastar continua abrindo os detalhes (tratado dentro do arrasto).
+    if (ev && ev.start.dateTime && podeMexer(ev)) ativarArrastoEvento(el, ev);
+    else el.onclick = () => abrirEvento(el.dataset.id);
+  });
+  // arrastar no espaço vazio da coluna cria evento naquele horário
+  container.querySelectorAll('.day-col').forEach(col => ativarArrasto(col, col.dataset.data));
+}
+
+function renderAllDayRow() {
+  const container = document.getElementById('allday-row');
+  container.innerHTML = '';
+  for (const dia of visibleDays()) {
+    const dateStr = ymd(dia);
+    const items = state.events.filter(ev => !ev.start.dateTime && ev.start.date === dateStr);
+    const chips = items.map(ev => `
+      <div class="allday-chip ${ev._done ? 'done' : ''}" data-id="${escapeHtml(ev.id)}"
+           title="${escapeHtml((ev.summary||'') + (ev._source ? ' — ' + ev._source : ''))}">
+        ${ev._kind === 'task' ? (ev._done ? '☑ ' : '☐ ') : ''}${escapeHtml(ev.summary || '(sem título)')}
+      </div>`).join('');
+    container.insertAdjacentHTML('beforeend', `<div class="allday-cell">${chips}</div>`);
+  }
+  container.querySelectorAll('.allday-chip').forEach(chip => {
+    chip.onclick = () => abrirEvento(chip.dataset.id);
+  });
+}
+
+// Agrupa eventos que se sobrepõem e distribui em faixas verticais.
+// Retorna [evento, índice da faixa, total de faixas do grupo].
+function layoutDay(events) {
+  const dur = e => new Date(e.end.dateTime || e.start.dateTime) - new Date(e.start.dateTime);
+
+  // Um bloco nunca é desenhado com menos de 18px de altura, senão o texto não cabe.
+  // Uma sessão de 3 min mede 3px reais mas ocupa 18px na tela — por isso o cálculo
+  // das faixas usa o espaço OCUPADO, não só o horário. Sem isso, duas sessões curtas
+  // e seguidas caem na mesma faixa e se sobrepõem visualmente.
+  const MIN_MS = Math.ceil(18 / HOUR_HEIGHT * 60) * 60000;
+  // Uma sobra de poucos pixels não justifica jogar o vizinho pra outra faixa:
+  // um evento de 15min estica 1px além do fim e encostaria no seguinte.
+  const TOL_MS = Math.round(5 / HOUR_HEIGHT * 60) * 60000;
+  const fimVisual = e => {
+    const ini = new Date(e.start.dateTime).getTime();
+    const fim = new Date(e.end.dateTime || e.start.dateTime).getTime();
+    return Math.max(fim, ini + MIN_MS);
+  };
+  // Cabem na mesma faixa se o de cima termina antes do de baixo começar,
+  // tolerando o arredondamento da altura mínima.
+  const cabeNaFaixa = (fimDaFaixa, inicio) => fimDaFaixa <= inicio + TOL_MS;
+
+  // Ordena por início e, em empate, o mais longo primeiro: assim o comprido fica
+  // na faixa da esquerda e o curto sobra numa faixa própria, sempre visível.
+  const evs = [...events].sort((a, b) =>
+    (new Date(a.start.dateTime) - new Date(b.start.dateTime)) || (dur(b) - dur(a)));
+  const out = [];
+  let group = [], groupEnd = -Infinity;
+
+  const flush = () => {
+    if (!group.length) return;
+    const lanes = []; // fim visual de cada faixa
+    for (const e of group) {
+      const s = new Date(e.start.dateTime).getTime();
+      let i = lanes.findIndex(fim => cabeNaFaixa(fim, s));
+      if (i === -1) { i = lanes.length; }
+      lanes[i] = fimVisual(e);
+      e._lane = i;
+    }
+    for (const e of group) out.push([e, e._lane, lanes.length]);
+    group = []; groupEnd = -Infinity;
+  };
+
+  for (const e of evs) {
+    const s = new Date(e.start.dateTime).getTime();
+    if (cabeNaFaixa(groupEnd, s)) flush();
+    group.push(e);
+    groupEnd = Math.max(groupEnd, fimVisual(e));
+  }
+  flush();
+  return out;
+}
+
+// A API devolve a paleta LEGADA (ex.: id 7 = #46d6db, ciano). A interface atual do
+// Google desenha os mesmos ids com estas cores. Usamos as de baixo pra bater com o
+// que ele vê no Google Agenda.
+const NOMES_CORES = {
+  '1': 'Lavanda', '2': 'Sálvia', '3': 'Uva', '4': 'Flamingo', '5': 'Banana', '6': 'Tangerina',
+  '7': 'Pavão', '8': 'Grafite', '9': 'Mirtilo', '10': 'Manjericão', '11': 'Tomate',
+};
+const CORES_GOOGLE = {
+  '1': '#7986cb', // Lavanda
+  '2': '#33b679', // Sálvia
+  '3': '#8e24aa', // Uva
+  '4': '#e67c73', // Flamingo
+  '5': '#f6bf26', // Banana
+  '6': '#f4511e', // Tangerina
+  '7': '#039be5', // Pavão
+  '8': '#616161', // Grafite
+  '9': '#3f51b5', // Mirtilo
+  '10': '#0b8043', // Manjericão
+  '11': '#d50000', // Tomate
+};
+
+function hexParaRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Mistura a cor com o fundo escuro, como o Google faz no tema dark:
+// a cor fica reconhecível mas bem menos berrante.
+function suavizar(hex, fator = 0.15) {
+  const rgb = hexParaRgb(hex);
+  if (!rgb) return hex;
+  const fundo = [26, 27, 30];
+  const [r, g, b] = rgb.map((c, i) => Math.round(c * (1 - fator) + fundo[i] * fator));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+// Cor do evento, na mesma regra do Google: cor própria do evento (colorId)
+// se houver, senão a cor do calendário a que ele pertence.
+// Chave da cor local: o nome da atividade. Assim, colorir "Cotação" uma vez
+// pinta todas as ocorrências da série, hoje e nas próximas semanas.
+function chaveCor(ev) { return (ev.summary || '').trim().toLowerCase(); }
+
+// Com texto preto, cor escura demais fica ilegível. Clareia até dar contraste,
+// preservando o tom (Uva continua roxo, Tomate continua vermelho).
+function garantirLegibilidade(cor) {
+  const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(cor);
+  let rgb = m ? [+m[1], +m[2], +m[3]] : hexParaRgb(cor);
+  if (!rgb) return cor;
+  const lum = ([r, g, b]) => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  let voltas = 0;
+  while (lum(rgb) < 0.55 && voltas++ < 24) {
+    rgb = rgb.map(c => Math.min(255, Math.round(c + (255 - c) * 0.12)));
+  }
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function corDoEvento(ev, semRecursao = false) {
+  const local = state.coresLocais[chaveCor(ev)];
+  if (local) return garantirLegibilidade(suavizar(local));
+
+  // Sessão iniciada a partir de um evento usa a cor daquele evento, mesmo quando
+  // ele não tem cor própria e herda a do calendário.
+  if (!semRecursao && ev._kind === 'realized' && ev._origemId) {
+    const origem = state.events.find(x => x.id === ev._origemId);
+    if (origem) return corDoEvento(origem, true);
+  }
+
+  const paleta = state.colors && state.colors.event;
+  let base = null;
+  if (ev.colorId) {
+    base = CORES_GOOGLE[ev.colorId]
+        || (paleta && paleta[ev.colorId] && paleta[ev.colorId].background);
+  }
+  // Sem cor própria, o evento herda a do calendário — mesma regra do Google.
+  // O backgroundColor do calendarList já é a cor moderna, não precisa de mapeamento.
+  if (!base) base = state.calColors[ev._calId] || '#3f51b5';
+  return garantirLegibilidade(suavizar(base));
+}
+
+// Texto sempre preto nos blocos, como no bloco "Financeiro".
+function corDoTexto() { return '#1a1a1a'; }
+
+function renderEvent(ev, lane = 0, lanes = 1) {
+  const start = new Date(ev.start.dateTime || ev.start.date);
+  const end = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime || ev.start.date);
+  const startH = zDec(start);
+  let endH = zDec(end);
+  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
+  const clampedStart = Math.max(startH, HOUR_START);
+  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
+  const top = (clampedStart - HOUR_START) * HOUR_HEIGHT;
+  const height = Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2);
+  const width = 100 / lanes;
+  const left = lane * width;
+  const isActive = state.session && state.session.gEventId === ev.id;
+  const timeStr = `${zHm(start)}–${zHm(end)}`;
+  const playBtn = (ev._kind === 'planned' && !isActive)
+    ? `<button class="event-play" data-id="${ev.id}" title="Iniciar sessão real">▶</button>`
+    : '';
+  // Bloco curto: título e horário na MESMA linha, pra o tempo ficar sempre à vista.
+  const compact = height < 34;
+
+  // Cores: a sessão em andamento fica vermelha pulsando; o resto usa a cor
+  // do Google. Sessões já registradas ficam tracejadas pra distinguir do planejado.
+  let cls = '', estilo = '';
+  if (isActive) {
+    cls = 'event-active';
+  } else {
+    const bg = corDoEvento(ev);
+    const fg = corDoTexto(bg);
+    const tracejado = ev._kind === 'realized' ? 'box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.45);' : '';
+    estilo = `background:${bg}; color:${fg}; ${tracejado}`;
+  }
+  if (ev._done) cls += ' event-done';
+
+  return `
+    <div class="event ${cls} ${compact ? 'event-compact' : ''}" data-id="${escapeHtml(ev.id)}"
+         style="top:${top}px; height:${height}px; left:calc(${left}% + 3px); width:calc(${width}% - 6px); z-index:${2 + lane}; ${estilo}"
+         title="${escapeHtml((ev.summary||'(sem título)') + ' · ' + timeStr + (ev._source ? ' · ' + ev._source : ''))}">
+      <div class="event-title">${ev._kind === 'task' ? (ev._done ? '☑ ' : '☐ ') : ''}${escapeHtml(ev.summary || '(sem título)')}${compact ? `<span class="event-time-inline">${timeStr}</span>` : ''}</div>
+      ${compact ? '' : `<div class="event-time">${timeStr}</div>`}
+      ${playBtn}
+    </div>
+  `;
+}
+
+// Aplica um horário novo a um evento, respeitando séries recorrentes.
+// Usado tanto pelo formulário quanto pelo arrastar.
+async function salvarHorario(ev, dataStr, hi, hf) {
+  const alvo = escolherEscopo(ev, 'mover');
+  if (alvo === null) return false;
+
+  let data = dataStr;
+  if (alvo === ev.recurringEventId) {
+    // Série inteira: o horário vai sobre a data do evento-pai, senão a série
+    // inteira saltaria para o dia que você estava olhando.
+    const pai = await gapi.client.calendar.events.get({
+      calendarId: ev._calId, eventId: ev.recurringEventId,
+    });
+    data = (pai.result.start.dateTime || pai.result.start.date).substring(0, 10);
+  }
+  await gapi.client.calendar.events.patch({
+    calendarId: ev._calId, eventId: alvo,
+    resource: {
+      start: { dateTime: `${data}T${hi}:00`, timeZone: state.tz },
+      end:   { dateTime: `${data}T${hf}:00`, timeZone: state.tz },
+    },
+  });
+  return true;
+}
+
+function podeMexer(ev) {
+  return ev._kind === 'realized' || ['owner', 'writer'].includes(state.calAccess[ev._calId]);
+}
+
+// ===== Arrastar eventos existentes: mover e redimensionar =====
+function ativarArrastoEvento(el, ev) {
+  el.classList.add('event-movivel');
+  const alca = document.createElement('div');
+  alca.className = 'alca';
+  el.appendChild(alca);
+
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    // o ▶ tem ação própria: não pode ser sequestrado pelo arrasto
+    if (e.target.closest('.event-play')) return;
+    e.preventDefault();
+    e.stopPropagation(); // não dispara o arrasto-de-criar da coluna
+
+    const redimensionando = e.target === alca;
+    const ini = new Date(ev.start.dateTime), fim = new Date(ev.end.dateTime);
+    const minIni = zDec(ini) * 60, minFim = zDec(fim) * 60;
+    const yInicial = e.clientY, xInicial = e.clientX;
+    let colAtual = el.parentElement;
+    let mudou = false, novoIni = minIni, novoFim = minFim, novaData = colAtual.dataset.data;
+
+    const colunas = [...document.querySelectorAll('#day-columns .day-col')];
+
+    const mover = m => {
+      const dy = m.clientY - yInicial;
+      if (!mudou && Math.abs(dy) < 4 && Math.abs(m.clientX - xInicial) < 4) return;
+      if (!mudou) { mudou = true; el.classList.add('event-arrastando'); }
+
+      const passo = Math.round((dy / HOUR_HEIGHT * 60) / PASSO_MIN) * PASSO_MIN;
+      if (redimensionando) {
+        novoFim = Math.max(minIni + PASSO_MIN, minFim + passo);
+      } else {
+        novoIni = Math.max(0, minIni + passo);
+        novoFim = novoIni + (minFim - minIni);
+        // arrastar pros lados troca o dia
+        const destino = colunas.find(c => {
+          const r = c.getBoundingClientRect();
+          return m.clientX >= r.left && m.clientX <= r.right;
+        });
+        if (destino && destino !== colAtual) {
+          colAtual = destino;
+          novaData = destino.dataset.data;
+          destino.appendChild(el);
+        }
+      }
+      el.style.top = ((novoIni - HOUR_START * 60) / 60 * HOUR_HEIGHT) + 'px';
+      el.style.height = Math.max(18, (novoFim - novoIni) / 60 * HOUR_HEIGHT - 2) + 'px';
+      const t = el.querySelector('.event-time') || el.querySelector('.event-time-inline');
+      if (t) t.textContent = `${hhmm(novoIni)}–${hhmm(novoFim)}`;
+    };
+
+    const soltar = async () => {
+      document.removeEventListener('mousemove', mover);
+      document.removeEventListener('mouseup', soltar);
+      el.classList.remove('event-arrastando');
+      if (!mudou) return abrirEvento(ev.id); // não arrastou: é clique
+      try {
+        const ok = await salvarHorario(ev, novaData, hhmm(novoIni), hhmm(novoFim));
+        if (!ok) return renderAll();
+        await fetchEvents();
+        renderAll();
+      } catch (err) {
+        console.error(err);
+        alert('Não consegui mover: ' + (err.result?.error?.message || err.message || 'erro'));
+        renderAll();
+      }
+    };
+    document.addEventListener('mousemove', mover);
+    document.addEventListener('mouseup', soltar);
+  });
+}
+
+// ===== Arrastar na grade para criar (igual ao Google Agenda) =====
+const PASSO_MIN = 15; // encaixa de 15 em 15 minutos
+
+function minutosDoPonto(col, clientY) {
+  const r = col.getBoundingClientRect();
+  const y = Math.min(Math.max(clientY - r.top, 0), r.height);
+  const min = (y / HOUR_HEIGHT) * 60 + HOUR_START * 60;
+  return Math.round(min / PASSO_MIN) * PASSO_MIN;
+}
+
+function hhmm(min) {
+  const m = Math.max(0, Math.min(24 * 60, min));
+  return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+}
+
+function ativarArrasto(col, dataStr) {
+  let inicio = null, caixa = null;
+
+  const posicionar = (a, b) => {
+    const de = Math.min(a, b), ate = Math.max(a, b);
+    const top = (de - HOUR_START * 60) / 60 * HOUR_HEIGHT;
+    const alt = Math.max(HOUR_HEIGHT / 4, (ate - de) / 60 * HOUR_HEIGHT);
+    caixa.style.top = top + 'px';
+    caixa.style.height = alt + 'px';
+    caixa.textContent = `${hhmm(de)} – ${hhmm(ate)}`;
+  };
+
+  col.addEventListener('mousedown', e => {
+    // clicar num evento existente abre os detalhes; arrastar só no vazio
+    if (e.button !== 0 || e.target.closest('.event')) return;
+    e.preventDefault();
+    inicio = minutosDoPonto(col, e.clientY);
+    caixa = document.createElement('div');
+    caixa.className = 'arrasto';
+    col.appendChild(caixa);
+    posicionar(inicio, inicio + PASSO_MIN * 2);
+
+    const mover = ev => posicionar(inicio, minutosDoPonto(col, ev.clientY));
+    const soltar = ev => {
+      document.removeEventListener('mousemove', mover);
+      document.removeEventListener('mouseup', soltar);
+      let fim = minutosDoPonto(col, ev.clientY);
+      let de = Math.min(inicio, fim), ate = Math.max(inicio, fim);
+      if (ate - de < PASSO_MIN) ate = de + 30; // clique seco vira bloco de 30 min
+      caixa.remove(); caixa = null; inicio = null;
+      abrirNovoComHorario(dataStr, hhmm(de), hhmm(ate));
+    };
+    document.addEventListener('mousemove', mover);
+    document.addEventListener('mouseup', soltar);
+  });
+}
+
+function abrirNovoComHorario(dataStr, de, ate) {
+  const [a, m, d] = dataStr.split('-').map(Number);
+  abrirNovo(new Date(a, m - 1, d));
+  document.getElementById('new-date').value = dataStr;
+  document.getElementById('new-start').value = de;
+  document.getElementById('new-end').value = ate;
+}
+
+// ===== Novo evento =====
+const DIAS_RRULE = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+const DIAS_LABEL = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+let novaCor = null; // colorId escolhido no formulário
+
+function abrirNovo(dataInicial) {
+  const d = dataInicial || new Date(state.cursor);
+  state.editando = null;
+  document.getElementById('new-modal-title').textContent = 'Novo evento';
+  document.getElementById('new-save').textContent = 'Criar no Google Agenda';
+  document.getElementById('new-cal').disabled = false;
+  document.getElementById('new-hint').classList.add('hidden');
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-date').value = ymd(d);
+  document.getElementById('new-start').value = '09:00';
+  document.getElementById('new-end').value = '10:00';
+  document.getElementById('new-repeat').value = 'none';
+  document.getElementById('new-notif').value = '10';
+  document.getElementById('new-notif-tipo').value = 'popup';
+  document.getElementById('new-until').value = '';
+  document.getElementById('new-error').classList.add('hidden');
+  novaCor = null;
+
+  // só calendários onde você pode escrever
+  const sel = document.getElementById('new-cal');
+  const graváveis = state.calendars.filter(c => ['owner', 'writer'].includes(c.accessRole));
+  // Se a lista ainda não carregou, o select ficaria vazio e o POST iria sem calendarId
+  // (o Google responde "Not Found"). O 'primary' sempre existe pra conta logada.
+  const lista = graváveis.length ? graváveis
+              : state.calendars.length ? state.calendars
+              : [{ id: 'primary', summary: 'Principal' }];
+  sel.innerHTML = lista.map(c =>
+    `<option value="${escapeHtml(c.id)}" ${c.id === state.ultimoCal ? 'selected' : ''}>${escapeHtml(c.summary || c.id)}</option>`
+  ).join('');
+
+  renderDiasSemana(d.getDay());
+  renderNovaPaleta();
+  atualizarCamposRepeticao();
+
+  const m = document.getElementById('new-modal');
+  m.classList.remove('hidden');
+  m.style.display = 'flex';
+  document.getElementById('new-title').focus();
+
+  // Lista não carregada ainda: busca e repopula o select sem fechar o modal.
+  if (!state.calendars.length) {
+    loadCalendarList().then(() => {
+      if (!document.getElementById('new-modal').classList.contains('hidden') && !state.editando) {
+        const grav = state.calendars.filter(c => ['owner', 'writer'].includes(c.accessRole));
+        const l = grav.length ? grav : state.calendars;
+        if (l.length) sel.innerHTML = l.map(c =>
+          `<option value="${escapeHtml(c.id)}" ${c.id === state.ultimoCal ? 'selected' : ''}>${escapeHtml(c.summary || c.id)}</option>`
+        ).join('');
+      }
+    }).catch(() => {});
+  }
+}
+
+function fecharNovo() {
+  const m = document.getElementById('new-modal');
+  m.classList.add('hidden');
+  m.style.display = 'none';
+}
+
+function renderDiasSemana(diaPadrao) {
+  const box = document.querySelector('#new-days > div');
+  box.innerHTML = DIAS_LABEL.map((rot, i) => `
+    <button type="button" class="dia-btn ${i === diaPadrao ? 'dia-ativo' : ''}" data-dia="${i}">${rot}</button>
+  `).join('');
+  box.querySelectorAll('.dia-btn').forEach(b => {
+    b.onclick = () => b.classList.toggle('dia-ativo');
+  });
+}
+
+function renderNovaPaleta() {
+  const el = document.getElementById('new-palette');
+  const botao = (id, hex) => `
+    <button type="button" class="paleta-btn ${novaCor === id ? 'paleta-ativa' : ''}" data-id="${id || ''}"
+            title="${escapeHtml(id ? NOMES_CORES[id] : 'Cor padrão do calendário')}"
+            style="background:${hex ? suavizar(hex) : 'transparent'}; ${hex ? '' : 'border:1px dashed #52525b;'}">
+      ${hex ? '' : '<span style="font-size:10px;color:#a1a1aa">auto</span>'}
+    </button>`;
+  el.innerHTML = botao(null, null) + Object.entries(CORES_GOOGLE).map(([id, hex]) => botao(id, hex)).join('');
+  el.querySelectorAll('.paleta-btn').forEach(b => {
+    b.onclick = () => { novaCor = b.dataset.id || null; renderNovaPaleta(); };
+  });
+}
+
+function atualizarCamposRepeticao() {
+  const modo = document.getElementById('new-repeat').value;
+  document.getElementById('new-days').classList.toggle('hidden', modo !== 'custom');
+  document.getElementById('new-until-wrap').classList.toggle('hidden', modo === 'none');
+}
+
+// Monta o RRULE que o Google entende a partir das opções do formulário.
+function montarRecorrencia() {
+  const modo = document.getElementById('new-repeat').value;
+  if (modo === 'none') return null;
+
+  let regra;
+  if (modo === 'daily') regra = 'FREQ=DAILY';
+  else if (modo === 'weekdays') regra = 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR';
+  else if (modo === 'weekly') regra = 'FREQ=WEEKLY';
+  else if (modo === 'monthly') {
+    // Trava no dia do mês da própria data do evento (dd de yyyy-mm-dd).
+    const dia = +(document.getElementById('new-date').value || '').slice(8, 10);
+    if (!dia) throw new Error('Escolha a data do evento antes de repetir todo mês.');
+    regra = 'FREQ=MONTHLY;BYMONTHDAY=' + dia;
+  }
+  else {
+    const dias = [...document.querySelectorAll('#new-days .dia-ativo')].map(b => DIAS_RRULE[+b.dataset.dia]);
+    if (!dias.length) throw new Error('Escolha pelo menos um dia da semana.');
+    regra = 'FREQ=WEEKLY;BYDAY=' + dias.join(',');
+  }
+
+  const ate = document.getElementById('new-until').value;
+  if (ate) regra += ';UNTIL=' + ate.replace(/-/g, '') + 'T235959Z';
+  return ['RRULE:' + regra];
+}
+
+// Abre o mesmo formulário, agora preenchido, para alterar um evento existente.
+async function abrirEdicao(ev) {
+  await carregarRecorrencia(ev);
+  const ini = new Date(ev.start.dateTime || ev.start.date);
+  const fim = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime);
+
+  abrirNovo(ini);
+  state.editando = ev;
+
+  document.getElementById('new-modal-title').textContent = 'Editar evento';
+  document.getElementById('new-save').textContent = 'Salvar alterações';
+  document.getElementById('new-title').value = ev.summary || '';
+  document.getElementById('new-date').value = zDate(ini);
+  document.getElementById('new-start').value = zHm(ini);
+  document.getElementById('new-end').value = zHm(fim);
+
+  // O calendário não pode mudar aqui — mover entre calendários é outra operação.
+  const sel = document.getElementById('new-cal');
+  sel.value = ev._calId;
+  sel.disabled = true;
+
+  document.getElementById('new-repeat').value = repeticaoDoRrule(ev._rrule);
+  atualizarCamposRepeticao();
+  marcarDiasDoRrule(ev._rrule);
+
+  const lembrete = (ev.overrideReminders || (ev.reminders && ev.reminders.overrides) || [])[0];
+  document.getElementById('new-notif').value = lembrete ? String(lembrete.minutes) : '';
+  document.getElementById('new-notif-tipo').value = lembrete ? lembrete.method : 'popup';
+
+  novaCor = ev.colorId || null;
+  renderNovaPaleta();
+
+  const dica = document.getElementById('new-hint');
+  if (ev.recurringEventId) {
+    dica.textContent = 'Este evento se repete — ao salvar você escolhe se vale só para este dia ou para toda a série.';
+    dica.classList.remove('hidden');
+  } else dica.classList.add('hidden');
+}
+
+function repeticaoDoRrule(regra) {
+  const r = (regra || '').toUpperCase();
+  if (!r) return 'none';
+  if (/FREQ=DAILY/.test(r)) return 'daily';
+  if (/FREQ=MONTHLY/.test(r)) return 'monthly';
+  const dias = /BYDAY=([A-Z,]+)/.exec(r);
+  if (dias) {
+    const l = dias[1].split(',');
+    return (l.length === 5 && ['MO','TU','WE','TH','FR'].every(d => l.includes(d))) ? 'weekdays' : 'custom';
+  }
+  return /FREQ=WEEKLY/.test(r) ? 'weekly' : 'none';
+}
+
+function marcarDiasDoRrule(regra) {
+  const dias = /BYDAY=([A-Z,]+)/.exec((regra || '').toUpperCase());
+  if (!dias) return;
+  const ativos = dias[1].split(',');
+  document.querySelectorAll('#new-days .dia-btn').forEach(b => {
+    b.classList.toggle('dia-ativo', ativos.includes(DIAS_RRULE[+b.dataset.dia]));
+  });
+}
+
+async function salvarNovo() {
+  const erro = document.getElementById('new-error');
+  const mostrarErro = msg => { erro.textContent = msg; erro.classList.remove('hidden'); };
+  erro.classList.add('hidden');
+
+  const titulo = document.getElementById('new-title').value.trim();
+  const data = document.getElementById('new-date').value;
+  const hi = document.getElementById('new-start').value;
+  const hf = document.getElementById('new-end').value;
+
+  if (!titulo) return mostrarErro('Dê um nome ao evento.');
+  if (!data || !hi || !hf) return mostrarErro('Preencha data, início e fim.');
+  if (hf <= hi) return mostrarErro('O fim precisa ser depois do início.');
+
+  let recorrencia;
+  try { recorrencia = montarRecorrencia(); }
+  catch (e) { return mostrarErro(e.message); }
+
+  const calId = (state.editando ? state.editando._calId : document.getElementById('new-cal').value) || 'primary';
+  const corpo = {
+    summary: titulo,
+    // sem offset: o timeZone abaixo define o fuso, evitando o desencontro de horário
+    start: { dateTime: `${data}T${hi}:00`, timeZone: state.tz },
+    end:   { dateTime: `${data}T${hf}:00`, timeZone: state.tz },
+  };
+  if (recorrencia) corpo.recurrence = recorrencia;
+  if (novaCor) corpo.colorId = novaCor;
+
+  // Notificação: sobrescreve o padrão do calendário, igual ao Google.
+  const minutos = document.getElementById('new-notif').value;
+  corpo.reminders = minutos === ''
+    ? { useDefault: false, overrides: [] }
+    : { useDefault: false, overrides: [{ method: document.getElementById('new-notif-tipo').value, minutes: +minutos }] };
+
+  const ev = state.editando;
+  const btn = document.getElementById('new-save');
+  const rotuloOriginal = btn.textContent;
+  btn.disabled = true; btn.textContent = ev ? 'Salvando…' : 'Criando…';
+
+  try {
+    if (!ev) {
+      await gapi.client.calendar.events.insert({ calendarId: calId, resource: corpo });
+    } else {
+      const alvo = escolherEscopo(ev, 'alterar');
+      if (alvo === ev.recurringEventId) {
+        // Série inteira: o horário novo é aplicado sobre a data do evento-pai,
+        // senão a série toda saltaria para a data que você estava vendo.
+        const pai = await gapi.client.calendar.events.get({
+          calendarId: ev._calId, eventId: ev.recurringEventId,
+        });
+        const dataPai = (pai.result.start.dateTime || pai.result.start.date).substring(0, 10);
+        corpo.start = { dateTime: `${dataPai}T${hi}:00`, timeZone: state.tz };
+        corpo.end   = { dateTime: `${dataPai}T${hf}:00`, timeZone: state.tz };
+      } else {
+        // Só esta ocorrência: não mexer na regra de repetição da série.
+        delete corpo.recurrence;
+      }
+      if (!novaCor) corpo.colorId = null; // "auto" limpa a cor no Google
+      await gapi.client.calendar.events.patch({
+        calendarId: ev._calId, eventId: alvo, resource: corpo,
+      });
+      state.rrules = {}; // a regra pode ter mudado
+    }
+
+    state.ultimoCal = calId;
+    localStorage.setItem('fb2.ultimoCal', calId);
+    fecharNovo();
+    await fetchEvents();
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    mostrarErro((ev ? 'Não consegui salvar: ' : 'Não consegui criar: ')
+      + (err.result?.error?.message || err.message || 'erro'));
+  } finally {
+    btn.disabled = false; btn.textContent = rotuloOriginal;
+  }
+}
+
+// ===== Relatórios: planejado × realizado =====
+const COR_PLAN = '#3987e5', COR_REAL = '#d95926';
+let relMostrandoTabela = false;
+
+function horas(min) {
+  const h = Math.floor(min / 60), m = Math.round(min % 60);
+  if (!min) return '0';
+  return m ? `${h}h${pad(m)}` : `${h}h`;
+}
+
+// Busca os eventos do período pedido, que pode ser maior que a semana na tela.
+async function eventosDoPeriodo(de, ate) {
+  if (!state.calendars.length) await loadCalendarList();
+  const jobs = state.calendars.map(cal =>
+    gapi.client.calendar.events.list({
+      calendarId: cal.id, timeMin: de.toISOString(), timeMax: ate.toISOString(),
+      singleEvents: true, orderBy: 'startTime', maxResults: 2500,
+    }).then(r => (r.result.items || []).map(e => ({
+      ...e,
+      _kind: cal.id === state.realizedCalId ? 'realized' : 'planned',
+      _calId: cal.id,
+    }))).catch(() => [])
+  );
+  return (await Promise.all(jobs)).flat().filter(e => e.start.dateTime);
+}
+
+function periodoSelecionado() {
+  const modo = document.getElementById('rel-range').value;
+  if (modo === '30') {
+    const ate = addDays(new Date(), 1); ate.setHours(0, 0, 0, 0);
+    return [addDays(ate, -30), ate, 'Últimos 30 dias'];
+  }
+  const base = modo === 'prev' ? addDays(state.cursor, -7) : state.cursor;
+  const ini = startOfWeek(base);
+  return [ini, addDays(ini, 7), modo === 'prev' ? 'Semana passada' : 'Esta semana'];
+}
+
+// Agrega minutos planejados e realizados por atividade e por dia.
+function agregar(eventos) {
+  const porAtividade = new Map(), porDia = new Map();
+  let totalPlan = 0, totalReal = 0;
+
+  for (const ev of eventos) {
+    const ini = new Date(ev.start.dateTime), fim = new Date(ev.end.dateTime || ev.start.dateTime);
+    const min = Math.max(0, (fim - ini) / 60000);
+    if (!min) continue;
+    const nome = (ev.summary || '(sem título)').trim();
+    const chave = nome.toLowerCase();
+    const real = ev._kind === 'realized';
+
+    if (!porAtividade.has(chave)) porAtividade.set(chave, { nome, plan: 0, real: 0 });
+    porAtividade.get(chave)[real ? 'real' : 'plan'] += min;
+
+    if (real) {
+      const dia = zDate(ini);
+      porDia.set(dia, (porDia.get(dia) || 0) + min);
+      totalReal += min;
+    } else totalPlan += min;
+  }
+
+  const lista = [...porAtividade.values()].sort((a, b) => (b.plan + b.real) - (a.plan + a.real));
+  // Mais de 8 categorias vira ruído: o excedente agrupa em "Outros".
+  let atividades = lista;
+  if (lista.length > 8) {
+    const resto = lista.slice(8).reduce((a, x) => ({ nome: 'Outros', plan: a.plan + x.plan, real: a.real + x.real }), { nome: 'Outros', plan: 0, real: 0 });
+    atividades = [...lista.slice(0, 8), resto];
+  }
+  return { atividades, porDia, totalPlan, totalReal };
+}
+
+function barrasPorAtividade(atividades) {
+  if (!atividades.length) return '<p class="text-sm text-neutral-500">Nada registrado neste período.</p>';
+  const L = 168, R = 60, W = 720, alturaLinha = 46;
+  const H = atividades.length * alturaLinha + 12;
+  const max = Math.max(...atividades.map(a => Math.max(a.plan, a.real)), 1);
+  const esc = v => (v / max) * (W - L - R);
+
+  const linhas = atividades.map((a, i) => {
+    const y = i * alturaLinha + 6;
+    // duas barras finas, 2px de respiro entre elas, cantos arredondados na ponta
+    const b = (v, cor, dy, rot) => v <= 0 ? '' : `
+      <rect class="barra" x="${L}" y="${y + dy}" width="${Math.max(4, esc(v))}" height="13" fill="${cor}">
+        <title>${escapeHtml(a.nome)} · ${rot}: ${horas(v)}</title>
+      </rect>
+      <text class="valor" x="${L + Math.max(4, esc(v)) + 8}" y="${y + dy + 11}">${horas(v)}</text>`;
+    const nomeCurto = a.nome.length > 24 ? a.nome.slice(0, 23) + '…' : a.nome;
+    return `
+      <text class="rotulo" x="${L - 12}" y="${y + 20}" text-anchor="end">${escapeHtml(nomeCurto)}<title>${escapeHtml(a.nome)}</title></text>
+      ${b(a.plan, COR_PLAN, 2, 'planejado')}
+      ${b(a.real, COR_REAL, 17, 'realizado')}`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Horas planejadas e realizadas por atividade">
+    <line class="eixo" x1="${L}" y1="0" x2="${L}" y2="${H}"/>${linhas}</svg>`;
+}
+
+function barrasPorDia(porDia, de, ate) {
+  const dias = [];
+  for (let d = new Date(de); d < ate; d = addDays(d, 1)) dias.push(new Date(d));
+  if (dias.length > 31) return '';
+  const W = 720, H = 190, base = H - 30, topo = 12;
+  const larg = W / dias.length;
+  const max = Math.max(...dias.map(d => porDia.get(ymd(d)) || 0), 60);
+
+  const barras = dias.map((d, i) => {
+    const v = porDia.get(ymd(d)) || 0;
+    const alt = (v / max) * (base - topo);
+    const x = i * larg + 2;                       // 2px de respiro entre barras
+    const w = Math.max(3, larg - 4);
+    const rotulo = dias.length > 10
+      ? (i % Math.ceil(dias.length / 10) === 0 ? String(d.getDate()) : '')
+      : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
+    return `
+      ${v > 0 ? `<rect class="barra" x="${x}" y="${base - alt}" width="${w}" height="${alt}" fill="${COR_REAL}">
+        <title>${d.toLocaleDateString('pt-BR',{weekday:'long', day:'numeric', month:'short'})}: ${horas(v)}</title></rect>` : ''}
+      ${v > 0 && dias.length <= 10 ? `<text class="valor" x="${x + w/2}" y="${base - alt - 6}" text-anchor="middle">${horas(v)}</text>` : ''}
+      <text class="rotulo" x="${x + w/2}" y="${base + 18}" text-anchor="middle" style="font-size:11px">${rotulo}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Horas de foco registradas por dia">
+    <line class="eixo" x1="0" y1="${base}" x2="${W}" y2="${base}"/>${barras}</svg>`;
+}
+
+function tabelaRel(atividades) {
+  return `<table class="rel-tabela w-full text-sm">
+    <thead><tr><th>Atividade</th><th>Planejado</th><th>Realizado</th><th>Aderência</th></tr></thead>
+    <tbody>${atividades.map(a => {
+      const pct = a.plan > 0 ? Math.round(a.real / a.plan * 100) + '%' : (a.real > 0 ? '—' : '0%');
+      return `<tr>
+        <td class="text-neutral-200">${escapeHtml(a.nome)}</td>
+        <td class="text-neutral-400 mono">${horas(a.plan)}</td>
+        <td class="text-neutral-200 mono">${horas(a.real)}</td>
+        <td class="text-neutral-400 mono">${pct}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+async function abrirRelatorio() {
+  const m = document.getElementById('rel-modal');
+  m.classList.remove('hidden'); m.style.display = 'flex';
+  const corpo = document.getElementById('rel-corpo');
+  corpo.innerHTML = '<p class="text-sm text-neutral-500 py-10 text-center">Calculando…</p>';
+
+  const [de, ate, nome] = periodoSelecionado();
+  document.getElementById('rel-periodo').textContent =
+    `${nome} · ${de.toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} – ${addDays(ate,-1).toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}`;
+
+  if (!await garantirToken()) { corpo.innerHTML = '<p class="text-sm text-red-400 py-10 text-center">Reconecte ao Google para ver os relatórios.</p>'; return; }
+
+  let dados;
+  try { dados = agregar(await eventosDoPeriodo(de, ate)); }
+  catch (err) {
+    console.error(err);
+    corpo.innerHTML = '<p class="text-sm text-red-400 py-10 text-center">Não consegui buscar os dados.</p>';
+    return;
+  }
+
+  const { atividades, porDia, totalPlan, totalReal } = dados;
+  const aderencia = totalPlan > 0 ? Math.round(totalReal / totalPlan * 100) : null;
+
+  corpo.innerHTML = `
+    <div class="grid grid-cols-3 gap-3 mb-7">
+      <div class="tile"><div class="tile-rot">Planejado</div><div class="tile-num" style="color:${COR_PLAN}">${horas(totalPlan)}</div></div>
+      <div class="tile"><div class="tile-rot">Foco registrado</div><div class="tile-num" style="color:${COR_REAL}">${horas(totalReal)}</div></div>
+      <div class="tile"><div class="tile-rot">Aderência</div><div class="tile-num">${aderencia === null ? '—' : aderencia + '%'}</div></div>
+    </div>
+
+    <div class="flex items-center gap-4 mb-4 text-xs text-neutral-400">
+      <span class="flex items-center gap-1.5"><span class="legenda-ponto" style="background:${COR_PLAN}"></span>Planejado</span>
+      <span class="flex items-center gap-1.5"><span class="legenda-ponto" style="background:${COR_REAL}"></span>Realizado</span>
+    </div>
+
+    <div id="rel-vis" class="${relMostrandoTabela ? 'hidden' : ''}">
+      <h4 class="text-sm font-semibold text-neutral-300 mb-3">Por atividade</h4>
+      ${barrasPorAtividade(atividades)}
+      <h4 class="text-sm font-semibold text-neutral-300 mt-8 mb-3">Foco registrado por dia</h4>
+      ${barrasPorDia(porDia, de, ate)}
+    </div>
+    <div id="rel-tab" class="${relMostrandoTabela ? '' : 'hidden'}">${tabelaRel(atividades)}</div>
+
+    ${totalReal === 0 ? '<p class="text-xs text-neutral-600 mt-6">Nenhuma sessão registrada ainda. Use o ▶ num evento ou "Iniciar sessão livre" para o tempo real começar a aparecer aqui.</p>' : ''}
+  `;
+}
+
+// Falha ao renovar não deve limpar a tela: mostra um aviso e mantém o que já está lá.
+function avisarReconectar(mostrar) {
+  const el = document.getElementById('aviso-reconectar');
+  el.classList.toggle('hidden', !mostrar);
+  el.style.display = mostrar ? 'flex' : 'none';
+}
+
+function fecharRelatorio() {
+  const m = document.getElementById('rel-modal');
+  m.classList.add('hidden'); m.style.display = 'none';
+}
+
+// ===== Detalhes do evento =====
+// A instância expandida não traz o RRULE — ele vive no evento-pai. Busca sob demanda.
+async function carregarRecorrencia(ev) {
+  if (!ev.recurringEventId || ev._rrule !== undefined) return;
+  if (state.rrules[ev.recurringEventId] !== undefined) {
+    ev._rrule = state.rrules[ev.recurringEventId];
+    return;
+  }
+  try {
+    const r = await gapi.client.calendar.events.get({
+      calendarId: ev._calId, eventId: ev.recurringEventId,
+    });
+    const regra = (r.result.recurrence || []).find(x => x.startsWith('RRULE:')) || '';
+    state.rrules[ev.recurringEventId] = regra;
+    ev._rrule = regra;
+  } catch (e) {
+    console.warn('Não consegui ler a recorrência:', e);
+    ev._rrule = '';
+  }
+}
+
+async function abrirEvento(id) {
+  const ev = state.events.find(x => x.id === id);
+  if (!ev) return;
+  await carregarRecorrencia(ev);
+
+  const inicio = new Date(ev.start.dateTime || ev.start.date);
+  const fim = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime);
+  const diaInteiro = !ev.start.dateTime;
+  const quando = diaInteiro
+    ? inicio.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · dia inteiro'
+    : `${inicio.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })} · ${zHm(inicio)} – ${zHm(fim)}`;
+
+  const mins = Math.round((fim - inicio) / 60000);
+  const dur = mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? String(mins % 60).padStart(2, '0') : ''}` : `${mins} min`;
+
+  const tipo = ev._kind === 'realized' ? 'Sessão registrada'
+             : ev._kind === 'task' ? 'Tarefa do Google'
+             : 'Evento planejado';
+
+  const linhas = [
+    ['Quando', quando],
+    diaInteiro ? null : ['Duração', dur],
+    ev.recurringEventId ? ['Repetição', descreverRecorrencia(ev)] : null,
+    ['Calendário', ev._source || '—'],
+    ['Tipo', tipo],
+    descreverLembretes(ev) ? ['Notificação', descreverLembretes(ev)] : null,
+    ev.location ? ['Local', ev.location] : null,
+    ev.description ? ['Descrição', ev.description] : null,
+  ].filter(Boolean);
+
+  document.getElementById('event-modal-title').textContent = ev.summary || '(sem título)';
+  document.getElementById('event-modal-bar').style.background = corDoEvento(ev);
+  document.getElementById('event-modal-body').innerHTML = linhas.map(([rot, val]) => `
+    <div>
+      <dt class="text-[11px] uppercase tracking-wider text-neutral-500">${escapeHtml(rot)}</dt>
+      <dd class="text-neutral-200 whitespace-pre-wrap break-words">${escapeHtml(val)}</dd>
+    </div>`).join('');
+
+  const link = document.getElementById('event-modal-link');
+  if (ev.htmlLink) { link.href = ev.htmlLink; link.style.display = ''; }
+  else link.style.display = 'none';
+
+  const btn = document.getElementById('event-modal-start');
+  btn.style.display = ev._kind === 'realized' ? 'none' : '';
+  btn.onclick = () => { fecharEvento(); startSession(ev.summary || '(sem título)', ev._kind === 'task' ? null : ev); };
+
+  // Editar/apagar em qualquer calendário onde você tem permissão de escrita.
+  // Sessões do próprio FocusBoard são sempre editáveis, mesmo que o calendarList
+  // não tenha informado o accessRole.
+  const podeEditar = ev._kind === 'realized'
+    || ['owner', 'writer'].includes(state.calAccess[ev._calId]);
+  document.getElementById('event-modal-owned').style.display = podeEditar ? 'flex' : 'none';
+  if (podeEditar) {
+    document.getElementById('event-modal-delete').textContent =
+      ev._kind === 'realized' ? '🗑 Apagar sessão' : '🗑 Apagar evento';
+    document.getElementById('event-modal-edit').onclick = () => { fecharEvento(); abrirEdicao(ev); };
+    document.getElementById('event-modal-delete').onclick = () => apagarSessao(ev);
+  }
+
+  renderPaleta(ev);
+
+  const m = document.getElementById('event-modal');
+  m.classList.remove('hidden');
+  m.style.display = 'flex';
+}
+
+function renderPaleta(ev) {
+  const el = document.getElementById('event-modal-palette');
+  const atual = state.coresLocais[chaveCor(ev)] || null;
+
+  const botao = (hex, rotulo, ativo) => `
+    <button class="paleta-btn ${ativo ? 'paleta-ativa' : ''}" data-cor="${hex || ''}" title="${escapeHtml(rotulo)}"
+            style="background:${hex ? suavizar(hex) : 'transparent'}; ${hex ? '' : 'border:1px dashed #52525b;'}">
+      ${hex ? '' : '<span style="font-size:10px;color:#a1a1aa">auto</span>'}
+    </button>`;
+
+  el.innerHTML = botao(null, 'Usar a cor do Google', !atual)
+    + Object.entries(CORES_GOOGLE).map(([id, hex]) =>
+        botao(hex, NOMES_CORES[id] || id, atual === hex)).join('');
+
+  el.querySelectorAll('.paleta-btn').forEach(b => {
+    b.onclick = () => {
+      const cor = b.dataset.cor;
+      if (cor) state.coresLocais[chaveCor(ev)] = cor;
+      else delete state.coresLocais[chaveCor(ev)];
+      localStorage.setItem('fb2.cores', JSON.stringify(state.coresLocais));
+      renderPaleta(ev);
+      document.getElementById('event-modal-bar').style.background = corDoEvento(ev);
+      renderAll();
+    };
+  });
+}
+
+// Texto legível a partir do RRULE, pra você ver na hora que o evento repete.
+function descreverRecorrencia(ev) {
+  const regra = (ev._rrule || '').toUpperCase();
+  if (!regra) return 'Evento recorrente';
+  const nomes = { MO: 'seg', TU: 'ter', WE: 'qua', TH: 'qui', FR: 'sex', SA: 'sáb', SU: 'dom' };
+  const dias = /BYDAY=([A-Z,]+)/.exec(regra);
+  let txt;
+  if (/FREQ=DAILY/.test(regra)) txt = 'Todos os dias';
+  else if (/FREQ=MONTHLY/.test(regra)) {
+    const dm = /BYMONTHDAY=(\d+)/.exec(regra);
+    txt = dm ? `Todo mês, dia ${dm[1]}` : 'Todo mês';
+  }
+  else if (dias) {
+    const lista = dias[1].split(',');
+    txt = lista.length === 5 && ['MO','TU','WE','TH','FR'].every(d => lista.includes(d))
+      ? 'Segunda a sexta'
+      : 'Toda semana: ' + lista.map(d => nomes[d] || d).join(', ');
+  }
+  else if (/FREQ=WEEKLY/.test(regra)) txt = 'Uma vez por semana, neste dia';
+  else txt = 'Evento recorrente';
+  const ate = /UNTIL=(\d{4})(\d{2})(\d{2})/.exec(regra);
+  if (ate) txt += ` · até ${ate[3]}/${ate[2]}/${ate[1]}`;
+  return txt;
+}
+
+function descreverLembretes(ev) {
+  const r = ev.reminders;
+  const lista = (ev.overrideReminders) || (r && r.overrides) || [];
+  if (!lista.length) return (r && r.useDefault) ? 'Padrão do calendário' : null;
+  const nome = m => m === 'email' ? 'e-mail' : 'pop-up';
+  return lista.map(x => x.minutes === 0 ? `${nome(x.method)} na hora`
+    : x.minutes % 1440 === 0 ? `${nome(x.method)} ${x.minutes / 1440} dia(s) antes`
+    : x.minutes % 60 === 0 ? `${nome(x.method)} ${x.minutes / 60}h antes`
+    : `${nome(x.method)} ${x.minutes} min antes`).join(' · ');
+}
+
+// Séries recorrentes: pergunta se a ação vale só para esta ocorrência ou para todas.
+// Retorna o id certo a usar na API, ou null se a pessoa desistir.
+function escolherEscopo(ev, verbo) {
+  if (!ev.recurringEventId) return ev.id;
+  const todas = confirm(
+    `"${ev.summary}" se repete.\n\n` +
+    `OK = ${verbo} TODAS as ocorrências da série\n` +
+    `Cancelar = ${verbo} só a deste dia`
+  );
+  return todas ? ev.recurringEventId : ev.id;
+}
+
+async function renomearSessao(ev) {
+  const novo = prompt('Novo nome:', ev.summary || '');
+  if (novo === null || !novo.trim() || novo === ev.summary) return;
+  const alvo = escolherEscopo(ev, 'renomear');
+  try {
+    await gapi.client.calendar.events.patch({
+      calendarId: ev._calId, eventId: alvo, resource: { summary: novo.trim() },
+    });
+    fecharEvento();
+    await fetchEvents();
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    alert('Não consegui renomear: ' + (err.result?.error?.message || err.message || 'erro'));
+  }
+}
+
+async function apagarSessao(ev) {
+  const alvo = escolherEscopo(ev, 'apagar');
+  const serie = alvo === ev.recurringEventId;
+  const aviso = serie
+    ? `Apagar TODAS as ocorrências de "${ev.summary}"?`
+    : `Apagar "${ev.summary}"${ev.recurringEventId ? ' só neste dia' : ''}?`;
+  if (!confirm(`${aviso}\n\nSome do seu Google Agenda. Não dá pra desfazer.`)) return;
+  try {
+    await gapi.client.calendar.events.delete({ calendarId: ev._calId, eventId: alvo });
+    fecharEvento();
+    await fetchEvents();
+    renderAll();
+  } catch (err) {
+    console.error(err);
+    alert('Não consegui apagar: ' + (err.result?.error?.message || err.message || 'erro'));
+  }
+}
+
+function fecharEvento() {
+  const m = document.getElementById('event-modal');
+  m.classList.add('hidden');
+  m.style.display = 'none';
+}
+
+function renderSessionBar() {
+  const idle = document.getElementById('session-idle');
+  const active = document.getElementById('session-active');
+  // Não usar classList aqui: o display inline vence a classe .hidden do Tailwind
+  // e as duas barras acabavam visíveis ao mesmo tempo.
+  idle.style.display = state.session ? 'none' : 'flex';
+  active.style.display = state.session ? 'flex' : 'none';
+  if (state.session) {
+    document.getElementById('active-title').textContent = state.session.title;
+    updateTimerDisplay();
+    const pauseBtn = document.getElementById('pause-btn');
+    pauseBtn.textContent = state.session.isPaused ? '▶ Retomar' : '⏸ Pausar';
+    pauseBtn.onclick = state.session.isPaused ? resumeSession : pauseSession;
+  }
+}
+
+function updateTimerDisplay() {
+  if (!state.session) return;
+  let ms = state.session.pausedElapsed;
+  if (!state.session.isPaused && state.session.runningSince) ms += Date.now() - state.session.runningSince;
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  document.getElementById('active-timer').textContent = `${pad(h)}:${pad(m)}:${pad(sec)}`;
+}
+
+// A linha do "agora" era desenhada só no render e ficava parada até a página
+// ser recarregada. Agora ela anda sozinha, e o dia vira sem precisar recarregar.
+function atualizarLinhaAgora() {
+  const hoje = zDate(new Date());
+  const col = [...document.querySelectorAll('#day-columns .day-col')]
+    .find(c => c.dataset.data === hoje);
+
+  // virou o dia: a coluna de hoje mudou de lugar, precisa redesenhar
+  if (state.diaDesenhado && state.diaDesenhado !== hoje) {
+    state.diaDesenhado = hoje;
+    renderAll();
+    return;
+  }
+  state.diaDesenhado = hoje;
+
+  const linhaExistente = document.querySelector('.now-line');
+  if (!col) { if (linhaExistente) linhaExistente.remove(); return; }
+
+  const nowH = zDec(new Date());
+  if (nowH < HOUR_START || nowH > HOUR_END + 1) { if (linhaExistente) linhaExistente.remove(); return; }
+
+  const topo = (nowH - HOUR_START) * HOUR_HEIGHT;
+  let linha = linhaExistente;
+  if (!linha || linha.parentElement !== col) {
+    if (linha) linha.remove();
+    linha = document.createElement('div');
+    linha.className = 'now-line';
+    col.appendChild(linha);
+  }
+  linha.style.top = topo + 'px';
+}
+
+function tickTimer() {
+  if (state.session && !state.session.isPaused) updateTimerDisplay();
+}
+
+function showOnboarding() {
+  document.getElementById('onboarding').classList.remove('hidden');
+  document.getElementById('main-view').classList.add('hidden');
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('gcal-status').textContent = 'Conectar Google';
+}
+
+// Rola pro "agora" se hoje estiver na tela; senão, pro primeiro evento do período.
+// Evita abrir na madrugada vazia.
+function scrollToNow(suave = true) {
+  const visiveis = visibleDays().map(ymd);
+  const hoje = zDate(new Date());
+  let ancora;
+
+  if (visiveis.includes(hoje)) {
+    ancora = zDec(new Date());
+  } else {
+    const horas = state.events
+      .filter(ev => ev.start.dateTime && visiveis.includes(zDate(new Date(ev.start.dateTime))))
+      .map(ev => zDec(new Date(ev.start.dateTime)));
+    ancora = horas.length ? Math.min(...horas) : 8;
+  }
+
+  const top = Math.max(0, (ancora - HOUR_START - 1.5) * HOUR_HEIGHT);
+  document.querySelector('#main-view').scrollTo({ top, behavior: suave ? 'smooth' : 'auto' });
+}
+
+// ===== Init =====
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('FocusBoard build v3.7 — sessão grava progresso a cada 90s');
+  const passo = () => state.view === 'day' ? 1 : 7;
+  document.getElementById('prev-btn').onclick = async () => { state.cursor = addDays(state.cursor, -passo()); await fetchEvents(); renderAll(); scrollToNow(); };
+  document.getElementById('next-btn').onclick = async () => { state.cursor = addDays(state.cursor, passo()); await fetchEvents(); renderAll(); scrollToNow(); };
+  document.getElementById('view-btn').onclick = () => {
+    state.view = state.view === 'day' ? 'week' : 'day';
+    localStorage.setItem('fb2.view', state.view);
+    renderAll();
+    scrollToNow();
+  };
+  document.getElementById('today-btn').onclick = async () => {
+    state.cursor = new Date();
+    // Se hoje é fim de semana e ele está escondido, mostra o fim de semana
+    // em vez de deixar a semana sem a coluna de hoje.
+    const dia = state.cursor.getDay();
+    if (state.view === 'week' && !state.fds && (dia === 0 || dia === 6)) {
+      state.fds = true;
+      localStorage.setItem('fb2.fds', '1');
+    }
+    await fetchEvents(); renderAll(); scrollToNow();
+  };
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || !state.token) return;
+    if (await garantirToken()) { await fetchEvents(); renderAll(); }
+  });
+
+  document.getElementById('fds-btn').onclick = () => {
+    state.fds = !state.fds;
+    localStorage.setItem('fb2.fds', state.fds ? '1' : '0');
+    renderAll();
+  };
+  document.getElementById('aviso-btn').onclick = async () => {
+    try { await pedirToken(true); await fetchEvents(); renderAll(); }
+    catch (e) { alert('Não consegui reconectar: ' + e.message); }
+  };
+  document.getElementById('rel-btn').onclick = abrirRelatorio;
+  document.getElementById('rel-close').onclick = fecharRelatorio;
+  document.getElementById('rel-range').onchange = abrirRelatorio;
+  document.getElementById('rel-modal').onclick = e => { if (e.target.id === 'rel-modal') fecharRelatorio(); };
+  document.getElementById('rel-tabela').onclick = () => {
+    relMostrandoTabela = !relMostrandoTabela;
+    document.getElementById('rel-vis').classList.toggle('hidden', relMostrandoTabela);
+    document.getElementById('rel-tab').classList.toggle('hidden', !relMostrandoTabela);
+    document.getElementById('rel-tabela').textContent = relMostrandoTabela ? 'Ver gráficos' : 'Ver tabela';
+  };
+  document.getElementById('new-btn').onclick = () => abrirNovo();
+  document.getElementById('new-close').onclick = fecharNovo;
+  document.getElementById('new-save').onclick = salvarNovo;
+  document.getElementById('new-repeat').onchange = atualizarCamposRepeticao;
+  document.getElementById('new-modal').onclick = e => { if (e.target.id === 'new-modal') fecharNovo(); };
+
+  document.getElementById('event-modal-close').onclick = fecharEvento;
+  document.getElementById('event-modal').onclick = e => {
+    if (e.target.id === 'event-modal') fecharEvento(); // clique no fundo fecha
+  };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { fecharEvento(); fecharNovo(); fecharRelatorio(); } });
+
+  document.getElementById('tz-select').onchange = e => {
+    state.tz = e.target.value;
+    localStorage.setItem('fb2.tzManual', state.tz);
+    renderAll();
+    scrollToNow();
+  };
+  document.getElementById('connect-btn').onclick = connectGoogle;
+  document.getElementById('gcal-btn').onclick = () => { if (state.token && confirm('Desconectar do Google?')) logout(); else connectGoogle(); };
+  document.getElementById('start-free-btn').onclick = startFreeSession;
+  document.getElementById('stop-btn').onclick = stopSession;
+
+  renderPeriodLabel();
+  renderDayHeaders();
+  renderHourLabels();
+  renderAllDayRow();
+  renderDayColumns();
+  renderSessionBar();
+
+  waitLibs(initGoogle);
+  setInterval(tickTimer, 1000);
+  setInterval(baterPonto, 90 * 1000);   // grava o progresso a cada 1min30
+  setInterval(atualizarLinhaAgora, 20 * 1000);  // a linha do agora anda sozinha
+  // grava também ao sair da aba ou fechar, pra não perder o trecho final
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') baterPonto();
+  });
+});
+</script>
+</body>
+</html>
