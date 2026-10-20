@@ -950,7 +950,7 @@ function applyGridColumns() {
 // Celular: segurar ~0,35s e arrastar cria/move/redimensiona, igual ao mouse.
 // Antes de "armar" o toque, arrastar o dedo rola a página normalmente.
 function ativarToque() {
-  const cont = document.getElementById('day-columns');
+  const cont = document.getElementById('day-columns'), mv = document.getElementById('main-view');
   let timer = null, armado = false, alvo = null, x0 = 0, y0 = 0, ult = null;
   const fire = (tipo, el, t) => (el || document).dispatchEvent(new MouseEvent(tipo, {
     bubbles: true, cancelable: true, view: window, button: 0, clientX: t.clientX, clientY: t.clientY }));
@@ -958,18 +958,19 @@ function ativarToque() {
     if (e.touches.length !== 1 || e.target.closest('.event-play')) return;
     const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; ult = t; alvo = e.target; armado = false;
     clearTimeout(timer);
-    timer = setTimeout(() => { armado = true; if (navigator.vibrate) navigator.vibrate(15); fire('mousedown', alvo, { clientX: x0, clientY: y0 }); }, 350);
+    timer = setTimeout(() => { armado = true; mv.style.overflow = 'hidden'; mv.style.touchAction = 'none'; if (navigator.vibrate) navigator.vibrate(15); fire('mousedown', alvo, { clientX: x0, clientY: y0 }); }, 350);
   }, { passive: true });
   cont.addEventListener('touchmove', e => {
     const t = e.touches[0]; ult = t;
-    if (!armado) { if (Math.abs(t.clientX - x0) > 8 || Math.abs(t.clientY - y0) > 8) clearTimeout(timer); return; }
+    if (!armado) { if (Math.abs(t.clientX - x0) > 12 || Math.abs(t.clientY - y0) > 12) clearTimeout(timer); return; }
     e.preventDefault(); // armado: o dedo arrasta o bloco, não a página
     fire('mousemove', document, t);
   }, { passive: false });
   const fim = e => {
     clearTimeout(timer);
-    if (!armado) return;
+    if (!armado) { mv.style.overflow = ''; mv.style.touchAction = ''; return; }
     armado = false; e.preventDefault();
+    mv.style.overflow = ''; mv.style.touchAction = ''; // devolve a rolagem
     fire('mouseup', document, ult);
   };
   cont.addEventListener('touchend', fim, { passive: false });
