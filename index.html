@@ -979,6 +979,26 @@ function ativarToque() {
   }, { passive: false });
 }
 
+// Atualização automática (o app na tela de início não tem botão de recarregar).
+// BUILD é carimbado na hora de publicar; em "dev" (arquivo local) não faz nada.
+const BUILD = '20261020155620';
+async function vigiarVersao() {
+  if (BUILD === 'dev' || !/^https?:/.test(location.protocol)) return;
+  const ocupado = () => document.querySelector('.arrasto') ||
+    document.querySelector('#new-modal:not(.hidden), #event-modal:not(.hidden), #rel-modal:not(.hidden)');
+  const checar = async () => {
+    if (document.hidden || ocupado()) return;
+    try {
+      const r = await fetch('./index.html?c=' + Date.now(), { cache: 'no-store' });
+      const novo = (/const BUILD = '([^']+)'/.exec(await r.text()) || [])[1];
+      if (novo && novo !== BUILD && !ocupado()) location.replace(location.pathname + '?v=' + novo);
+    } catch (e) { /* sem internet: segue com a versão atual */ }
+  };
+  document.addEventListener('visibilitychange', checar);
+  setInterval(checar, 5 * 60 * 1000);
+  checar();
+}
+
 function renderAll() {
   document.body.classList.toggle('v-day', state.view === 'day');
   applyGridColumns();
@@ -2305,6 +2325,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   document.getElementById('rel-btn').onclick = abrirRelatorio;
   ativarToque();
+  vigiarVersao();
   // menu ⋯ do celular: abre/fecha e fecha ao escolher uma opção
   const cab = document.querySelector('header');
   document.getElementById('more-btn').onclick = () => cab.classList.toggle('menu-open');
