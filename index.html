@@ -36,11 +36,23 @@
     #new-modal > div { max-height: calc(100dvh - 16px) !important; }
     #new-modal .p-5 { padding: 16px !important; }
     #new-save { position: sticky; bottom: 0; box-shadow: 0 0 0 10px #0a0a0a; }
-    header { padding: 8px 12px !important; row-gap: 8px !important; }
-    #nav-bar { order: 3; width: 100%; flex-wrap: wrap; row-gap: 6px; }
-    #hour-labels, #grid-head > div:first-child, #grid-allday > div:first-child { position: sticky; left: 0; z-index: 6; background: #000; }
-    #nav-bar #period-label { margin-left: 8px; font-size: 13px; white-space: nowrap; }
-    #nav-bar button { margin-left: 4px !important; }
+    /* cabeçalho de uma linha só; o resto fica no menu ⋯ */
+    header { padding: 6px 10px !important; gap: 4px !important; flex-wrap: wrap !important; justify-content: flex-start !important; }
+    header > div:first-child > div:last-child { display: none; }
+    #nav-bar { display: contents; }
+    #nav-bar button { margin-left: 0 !important; }
+    #prev-btn, #next-btn { width: 30px !important; }
+    #today-btn { padding: 0 10px !important; }
+    #period-label { flex: 1; min-width: 0; margin-left: 4px !important; font-size: 13px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #new-btn { order: 5; }
+    #more-btn { display: flex !important; order: 6; }
+    #view-btn, #fds-btn, #rel-btn, header > div:last-child { display: none !important; }
+    header.menu-open #view-btn, header.menu-open #fds-btn, header.menu-open #rel-btn { display: block !important; order: 10; }
+    header.menu-open #fds-btn[style*="none"] { display: none !important; }
+    #grid-allday > div:first-child { font-size: 7px !important; padding-right: 4px !important; letter-spacing: 0 !important; }
+    header.menu-open > div:last-child { display: flex !important; order: 11; }
+    header.menu-open::after { content: ''; flex-basis: 100%; order: 7; }
+    body.v-day #grid-head { display: none; }
     #tz-select { display: none; }
     #main-view { padding-bottom: 96px !important; }
   }
@@ -186,6 +198,7 @@
       <button id="view-btn" class="ml-3 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">Semana</button>
       <button id="fds-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800" title="Mostrar ou esconder sábado e domingo">Fim de semana</button>
       <button id="rel-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">📊 Relatórios</button>
+      <button id="more-btn" style="display:none" class="ml-1 w-8 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 items-center justify-center" aria-label="Mais opções">⋯</button>
       <button id="new-btn" class="ml-1 px-3 h-8 rounded-md bg-sky-500 hover:bg-sky-400 text-black text-xs font-semibold">+ Novo</button>
     </div>
 
@@ -897,6 +910,7 @@ function applyGridColumns() {
 }
 
 function renderAll() {
+  document.body.classList.toggle('v-day', state.view === 'day');
   applyGridColumns();
   renderPeriodLabel();
   renderDayHeaders();
@@ -917,7 +931,7 @@ function renderAll() {
 function renderPeriodLabel() {
   const dias = visibleDays();
   const label = state.view === 'day'
-    ? dias[0].toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    ? dias[0].toLocaleDateString('pt-BR', innerWidth < 640 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     // último dia visível, que não é sempre o 7º: sem fim de semana a semana acaba na sexta
     : `${dias[0].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} – ${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short',year:'numeric'})}`;
   document.getElementById('period-label').textContent = label;
@@ -2145,6 +2159,10 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { alert('Não consegui reconectar: ' + e.message); }
   };
   document.getElementById('rel-btn').onclick = abrirRelatorio;
+  // menu ⋯ do celular: abre/fecha e fecha ao escolher uma opção
+  const cab = document.querySelector('header');
+  document.getElementById('more-btn').onclick = () => cab.classList.toggle('menu-open');
+  cab.addEventListener('click', e => { if (e.target.closest('#view-btn, #fds-btn, #rel-btn, #gcal-btn')) cab.classList.remove('menu-open'); });
   document.getElementById('rel-close').onclick = fecharRelatorio;
   document.getElementById('rel-range').onchange = abrirRelatorio;
   document.getElementById('rel-modal').onclick = e => { if (e.target.id === 'rel-modal') fecharRelatorio(); };
