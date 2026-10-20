@@ -37,7 +37,24 @@
     #new-modal .p-5 { padding: 16px !important; }
     #new-save { position: sticky; bottom: 0; box-shadow: 0 0 0 10px #0a0a0a; }
     /* cabeçalho de uma linha só; o resto fica no menu ⋯ */
-    header { padding: 6px 10px !important; gap: 4px !important; flex-wrap: wrap !important; justify-content: flex-start !important; }
+    /* ultra-compacto: o calendário é o que importa */
+    header { padding: 4px 8px !important; }
+    header button { height: 28px !important; font-size: 12px !important; }
+    header > div:first-child > div:first-child { width: 28px !important; height: 28px !important; }
+    #prev-btn, #next-btn { width: 26px !important; }
+    #period-label { font-size: 12px !important; }
+    #day-headers > div { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 3px 0 !important; }
+    #day-headers > div > div:first-child { margin-bottom: 0 !important; font-size: 9px !important; }
+    #day-headers > div > div:last-child { width: 22px !important; height: 22px !important; font-size: 12px !important; }
+    #hour-labels, #grid-head > div:first-child, #grid-allday > div:first-child { position: sticky; left: 0; z-index: 6; background: #000; }
+    #day-headers > div > div:last-child { margin: 0 !important; }
+    #grid-allday.vazio { display: none; }
+    .allday-cell { min-height: 20px; max-height: 56px; }
+    #session-bar { padding: 5px 10px !important; }
+    #session-bar #start-free-btn { padding: 6px 12px !important; }
+    #session-bar span.text-sm { font-size: 12px !important; }
+    #main-view { padding-bottom: 52px !important; }
+    header { padding: 4px 8px !important; gap: 4px !important; flex-wrap: wrap !important; justify-content: flex-start !important; }
     header > div:first-child > div:last-child { display: none; }
     #nav-bar { display: contents; }
     #nav-bar button { margin-left: 0 !important; }
@@ -54,7 +71,6 @@
     header.menu-open::after { content: ''; flex-basis: 100%; order: 7; }
     body.v-day #grid-head { display: none; }
     #tz-select { display: none; }
-    #main-view { padding-bottom: 96px !important; }
   }
   .mono { font-family: 'JetBrains Mono', monospace; letter-spacing: -0.02em; }
   .day-col { position: relative; border-left: 1px solid #1f1f21; min-height: 100%; }
@@ -933,6 +949,7 @@ function renderPeriodLabel() {
   const label = state.view === 'day'
     ? dias[0].toLocaleDateString('pt-BR', innerWidth < 640 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     // último dia visível, que não é sempre o 7º: sem fim de semana a semana acaba na sexta
+    : innerWidth < 640 ? `${dias[0].getDate()}–${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}`
     : `${dias[0].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} – ${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short',year:'numeric'})}`;
   document.getElementById('period-label').textContent = label;
 }
@@ -1026,6 +1043,7 @@ function renderAllDayRow() {
       </div>`).join('');
     container.insertAdjacentHTML('beforeend', `<div class="allday-cell">${chips}</div>`);
   }
+  document.getElementById('grid-allday').classList.toggle('vazio', !container.querySelector('.allday-chip'));
   container.querySelectorAll('.allday-chip').forEach(chip => {
     chip.onclick = () => abrirEvento(chip.dataset.id);
   });
@@ -2118,7 +2136,10 @@ function scrollToNow(suave = true) {
   }
 
   const top = Math.max(0, (ancora - HOUR_START - 1.5) * HOUR_HEIGHT);
-  document.querySelector('#main-view').scrollTo({ top, behavior: suave ? 'smooth' : 'auto' });
+  // celular, semana: leva o dia de hoje pra colada na coluna das horas (senão "TER 20" fica cortado)
+  const idx = visiveis.indexOf(hoje);
+  const left = (innerWidth < 640 && state.view === 'week' && idx > 0) ? idx * 130 : 0;
+  document.querySelector('#main-view').scrollTo({ top, left, behavior: suave ? 'smooth' : 'auto' });
 }
 
 // ===== Init =====
