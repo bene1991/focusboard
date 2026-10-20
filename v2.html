@@ -42,6 +42,13 @@
     #event-card, #new-modal > div { touch-action: pan-y; }
     #event-card { max-height: calc(100dvh - 16px); overflow-y: auto !important; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
     #rel-modal > div { touch-action: pan-y; }
+    /* nome da atividade inteiro: quebra em linhas em vez de cortar em "Check-in…" */
+    .event-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+    .event-compact .event-title { -webkit-line-clamp: 2; }
+    .event-compact { justify-content: flex-start; padding-top: 2px; padding-bottom: 2px; }
+    .event-compact .event-time-inline { display: none; }
+    .event, .day-col { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .alca { height: 18px !important; }
     /* ultra-compacto: o calendário é o que importa */
     header { padding: 4px 8px !important; }
     header button { height: 28px !important; font-size: 12px !important; }
@@ -937,6 +944,36 @@ function applyGridColumns() {
   const cols = innerWidth < 640 ? `44px repeat(${n}, minmax(${n === 1 ? 0 : 130}px, 1fr))` : `64px repeat(${n}, 1fr)`;
   for (const id of ['grid-head', 'grid-allday', 'grid-body'])
     document.getElementById(id).style.gridTemplateColumns = cols;
+}
+
+
+// Celular: segurar ~0,35s e arrastar cria/move/redimensiona, igual ao mouse.
+// Antes de "armar" o toque, arrastar o dedo rola a página normalmente.
+function ativarToque() {
+  const cont = document.getElementById('day-columns');
+  let timer = null, armado = false, alvo = null, x0 = 0, y0 = 0, ult = null;
+  const fire = (tipo, el, t) => (el || document).dispatchEvent(new MouseEvent(tipo, {
+    bubbles: true, cancelable: true, view: window, button: 0, clientX: t.clientX, clientY: t.clientY }));
+  cont.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || e.target.closest('.event-play')) return;
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; ult = t; alvo = e.target; armado = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => { armado = true; if (navigator.vibrate) navigator.vibrate(15); fire('mousedown', alvo, { clientX: x0, clientY: y0 }); }, 350);
+  }, { passive: true });
+  cont.addEventListener('touchmove', e => {
+    const t = e.touches[0]; ult = t;
+    if (!armado) { if (Math.abs(t.clientX - x0) > 8 || Math.abs(t.clientY - y0) > 8) clearTimeout(timer); return; }
+    e.preventDefault(); // armado: o dedo arrasta o bloco, não a página
+    fire('mousemove', document, t);
+  }, { passive: false });
+  const fim = e => {
+    clearTimeout(timer);
+    if (!armado) return;
+    armado = false; e.preventDefault();
+    fire('mouseup', document, ult);
+  };
+  cont.addEventListener('touchend', fim, { passive: false });
+  cont.addEventListener('touchcancel', fim, { passive: false });
 }
 
 function renderAll() {
@@ -2260,6 +2297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     catch (e) { alert('Não consegui reconectar: ' + e.message); }
   };
   document.getElementById('rel-btn').onclick = abrirRelatorio;
+  ativarToque();
   // menu ⋯ do celular: abre/fecha e fecha ao escolher uma opção
   const cab = document.querySelector('header');
   document.getElementById('more-btn').onclick = () => cab.classList.toggle('menu-open');
