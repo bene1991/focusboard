@@ -1058,10 +1058,11 @@ function renderDayColumns() {
     let lista = dayEvents;
     const sessAtiva = state.session;
     const origem = sessAtiva && dayEvents.find(e => e.id === sessAtiva.sourceEventId && e._kind === 'planned');
-    if (origem) {
+    const i = origem && sessaoDe(origem);
+    if (i) {
       lista = dayEvents.filter(e => e.id !== sessAtiva.gEventId);
-      const i = sessaoDe(origem), real = state.events.find(e => e.id === sessAtiva.gEventId);
-      if (i && real) {
+      const real = state.events.find(e => e.id === sessAtiva.gEventId);
+      if (real) {
         const trecho = (ini, fim) => ({ ...real, start: { dateTime: new Date(ini).toISOString() }, end: { dateTime: new Date(fim).toISOString() } });
         if (i.s0 < i.ps) lista.push(trecho(i.s0, Math.min(i.ps, i.s1)));
         if (i.s1 > i.pe) lista.push(trecho(Math.max(i.pe, i.s0), i.s1));
@@ -1255,6 +1256,9 @@ function sessaoDe(ev) {
   if (!sess || !sess.sourceEventId || sess.sourceEventId !== ev.id || !ev.start.dateTime) return null;
   const ps = +new Date(ev.start.dateTime), pe = +new Date(ev.end.dateTime || ev.start.dateTime);
   if (pe <= ps) return null;
+  // começou depois do fim previsto (ex.: ▶ num check-in que já passou): não é "dentro" da tarefa,
+  // então vale o bloco vermelho normal no horário de agora, sem mexer no bloco antigo.
+  if (sess.startedAt >= pe) return null;
   const s1 = Date.now();
   const a = Math.max(sess.startedAt, ps), b = Math.max(a, Math.min(s1, pe));
   return { ps, pe, a, b, s0: sess.startedAt, s1 };
