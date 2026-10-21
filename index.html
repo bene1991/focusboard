@@ -47,11 +47,8 @@
     .event-play::before { content: ""; position: absolute; inset: -8px; } /* área de toque maior que o desenho */
     .event:has(.event-play) .event-title { padding-right: 28px; }
     .event-compact .event-play { width: 20px !important; height: 20px !important; top: 50% !important; transform: translateY(-50%); }
-    /* alças de arrastar: só elas bloqueiam a rolagem, o resto do bloco continua rolando a página */
-    .grip { display: flex !important; position: absolute; left: 0; top: 0; bottom: 0; width: 22px; align-items: center; justify-content: center; font-size: 11px; letter-spacing: -2px; background: rgba(0,0,0,.14); color: rgba(0,0,0,.55); touch-action: none; z-index: 6; border-radius: 9px 0 0 9px; }
-    .alca { touch-action: none; }
-    .event:has(.grip) .event-title { padding-left: 16px; }
-    .event:has(.grip) .event-time, .event:has(.grip) .fill-info-linha { padding-left: 16px; }
+    /* toque: o app trata rolagem e arrasto (touch-action:none), senão o iOS assume a rolagem no meio do arrasto */
+    @media (pointer: coarse) { .day-col { touch-action: none; } }
     /* nome da atividade inteiro: quebra em linhas em vez de cortar em "Check-in…" */
     .event-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
     .event-compact .event-title { -webkit-line-clamp: 2; }
@@ -175,7 +172,6 @@
   .day-col { cursor: cell; }
   .event-movivel { cursor: grab; }
   .event-arrastando { opacity: 0.9; z-index: 40 !important; box-shadow: 0 10px 30px rgba(0,0,0,0.7); cursor: grabbing; }
-  .grip { display: none; }
   .alca {
     position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
     cursor: ns-resize; z-index: 5;
@@ -960,39 +956,62 @@ function applyGridColumns() {
 }
 
 
-// Celular: toque simples, sem simular mouse (no iOS o arrasto simulado é instável).
-// Toque num horário vazio abre o formulário naquele horário; toque num bloco abre os detalhes.
-// Mexer o dedo (> 12px) é rolagem e não faz nada. Mover/redimensionar fica pelo botão Editar.
+// Celular. Nas colunas o iOS não rola sozinho (touch-action:none): o app decide.
+//  - deslizar logo de cara  -> rola a agenda (com inércia)
+//  - segurar parado ~0,35s  -> vibra e passa a arrastar (cria no vazio, move o bloco, redimensiona pela borda de baixo)
+//  - toque curto            -> vazio abre o formulário; bloco abre os detalhes
 function ativarToque() {
-  const cont = document.getElementById('day-columns');
-  let x0 = 0, y0 = 0, t0 = 0, alvo = null, moveu = false;
-  // alças (mover/redimensionar): arrasto imediato, sem segurar. touch-action:none nelas impede a rolagem.
-  let arrasto = false, ultT = null;
+  const cont = document.getElementById('day-columns'), mv = document.getElementById('main-view');
+  let modo = null, timer = null, raf = 0, alvo = null, ult = null;
+  let x0 = 0, y0 = 0, t0 = 0, lx = 0, ly = 0, lt = 0, vx = 0, vy = 0;
   const mouse = (tipo, el, t) => (el || document).dispatchEvent(new MouseEvent(tipo, {
     bubbles: true, cancelable: true, view: window, button: 0, clientX: t.clientX, clientY: t.clientY }));
-  cont.addEventListener('touchstart', e => {
-    const alca = e.target.closest('.grip, .alca');
-    if (!alca || e.touches.length !== 1) return;
-    arrasto = true; ultT = e.touches[0]; e.preventDefault();
-    if (navigator.vibrate) navigator.vibrate(10);
-    mouse('mousedown', alca.classList.contains('grip') ? alca.parentElement : alca, ultT);
-  }, { passive: false });
-  cont.addEventListener('touchmove', e => { if (!arrasto) return; ultT = e.touches[0]; e.preventDefault(); mouse('mousemove', document, ultT); }, { passive: false });
-  const soltou = e => { if (!arrasto) return; arrasto = false; e.preventDefault(); mouse('mouseup', document, ultT); };
-  cont.addEventListener('touchend', soltou, { passive: false });
-  cont.addEventListener('touchcancel', soltou, { passive: false });
 
   cont.addEventListener('touchstart', e => {
-    if (arrasto || e.touches.length !== 1) { moveu = true; return; }
-    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); alvo = e.target; moveu = false;
-  }, { passive: true });
-  cont.addEventListener('touchmove', e => {
+    cancelAnimationFrame(raf); clearTimeout(timer);
+    if (e.touches.length !== 1 || e.target.closest('.event-play')) { modo = null; return; }
     const t = e.touches[0];
-    if (Math.abs(t.clientX - x0) > 12 || Math.abs(t.clientY - y0) > 12) moveu = true;
+    x0 = lx = t.clientX; y0 = ly = t.clientY; t0 = lt = Date.now(); vx = vy = 0; alvo = e.target; ult = t; modo = 'espera';
+    timer = setTimeout(() => {
+      if (modo !== 'espera') return;
+      modo = 'arrastar';
+      if (navigator.vibrate) navigator.vibrate(15);
+      mouse('mousedown', alvo, { clientX: x0, clientY: y0 });
+    }, 350);
   }, { passive: true });
-  cont.addEventListener('touchend', e => {
-    if (moveu || arrasto || !alvo || Date.now() - t0 > 600) return;
-    if (alvo.closest('.event-play, .grip, .alca')) return; // o ▶ tem clique próprio
+
+  cont.addEventListener('touchmove', e => {
+    if (!modo) return;
+    const t = e.touches[0]; ult = t;
+    if (e.cancelable) e.preventDefault();
+    if (modo === 'espera') {
+      if (Math.abs(t.clientX - x0) <= 10 && Math.abs(t.clientY - y0) <= 10) return;
+      clearTimeout(timer); modo = 'rolar';
+    }
+    if (modo === 'rolar') {
+      const agora = Date.now(), dx = lx - t.clientX, dy = ly - t.clientY, dt = Math.max(1, agora - lt);
+      mv.scrollLeft += dx; mv.scrollTop += dy;
+      vx = dx / dt; vy = dy / dt; lx = t.clientX; ly = t.clientY; lt = agora;
+      return;
+    }
+    mouse('mousemove', document, t); // arrastar
+  }, { passive: false });
+
+  const fim = e => {
+    clearTimeout(timer);
+    const m = modo; modo = null;
+    if (m === 'arrastar') { e.preventDefault(); mouse('mouseup', document, ult); return; }
+    if (m === 'rolar') { // inércia: continua rolando e vai freando
+      if (Date.now() - lt > 80) return;
+      const passo = () => {
+        if (Math.hypot(vx, vy) < 0.02) return;
+        mv.scrollLeft += vx * 16; mv.scrollTop += vy * 16; vx *= 0.95; vy *= 0.95;
+        raf = requestAnimationFrame(passo);
+      };
+      raf = requestAnimationFrame(passo);
+      return;
+    }
+    if (m !== 'espera' || !alvo || Date.now() - t0 > 600) return;
     const bloco = alvo.closest('.event');
     if (bloco) { e.preventDefault(); abrirEvento(bloco.dataset.id); return; }
     const col = alvo.closest('.day-col');
@@ -1000,12 +1019,14 @@ function ativarToque() {
     e.preventDefault();
     const ini = Math.floor(minutosDoPonto(col, y0) / 30) * 30;
     abrirNovoComHorario(col.dataset.data, hhmm(ini), hhmm(ini + 60));
-  }, { passive: false });
+  };
+  cont.addEventListener('touchend', fim, { passive: false });
+  cont.addEventListener('touchcancel', e => { clearTimeout(timer); if (modo === 'arrastar') mouse('mouseup', document, ult); modo = null; }, { passive: false });
 }
 
 // Atualização automática (o app na tela de início não tem botão de recarregar).
 // BUILD é carimbado na hora de publicar; em "dev" (arquivo local) não faz nada.
-const BUILD = '20261020234109';
+const BUILD = '20261020234339';
 async function vigiarVersao() {
   if (BUILD === 'dev' || !/^https?:/.test(location.protocol)) return;
   const ocupado = () => document.querySelector('.arrasto') ||
@@ -1433,9 +1454,6 @@ function ativarArrastoEvento(el, ev) {
   const alca = document.createElement('div');
   alca.className = 'alca';
   el.appendChild(alca);
-  const grip = document.createElement('div'); // celular: arrastar por aqui move o bloco
-  grip.className = 'grip'; grip.textContent = '⋮⋮';
-  el.appendChild(grip);
 
   el.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
