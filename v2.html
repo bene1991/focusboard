@@ -1059,6 +1059,7 @@ function renderDayColumns() {
   const todayStr = zDate(new Date());
   const container = document.getElementById('day-columns');
   container.innerHTML = '';
+  state.preenchendo = false;
 
   for (const d of visibleDays()) {
     const dateStr = ymd(d);
@@ -1087,6 +1088,7 @@ function renderDayColumns() {
     const origem = sessAtiva && dayEvents.find(e => e.id === sessAtiva.sourceEventId && e._kind === 'planned');
     const i = origem && sessaoDe(origem);
     if (i) {
+      state.preenchendo = true;
       lista = dayEvents.filter(e => e.id !== sessAtiva.gEventId);
       const real = state.events.find(e => e.id === sessAtiva.gEventId);
       if (real) {
@@ -1287,6 +1289,8 @@ function sessaoDe(ev) {
   // então vale o bloco vermelho normal no horário de agora, sem mexer no bloco antigo.
   if (sess.startedAt >= pe) return null;
   const s1 = Date.now();
+  // ▶ antes da hora: a tarefa ainda não começou, então não há o que preencher; vale o bloco vermelho de agora.
+  if (s1 < ps) return null;
   const a = Math.max(sess.startedAt, ps), b = Math.max(a, Math.min(s1, pe));
   return { ps, pe, a, b, s0: sess.startedAt, s1 };
 }
@@ -1311,13 +1315,13 @@ function atualizarPreenchimento() {
     const info = el.querySelector('.fill-info-linha');
     if (info) info.innerHTML = textoPreenchimento(i);
   });
-  // passou do fim previsto: o trecho extra é um bloco à parte, então precisa redesenhar (no máximo a cada 30s)
+  // o preenchimento começa (chegou a hora) ou o trecho extra aparece (passou do fim): redesenha, no máximo a cada 30s
   const agora = Date.now();
   if (agora - (state.ultimoRedesenho || 0) > 30000 && !document.querySelector('.arrasto') &&
       document.querySelectorAll('#new-modal:not(.hidden), #event-modal:not(.hidden)').length === 0) {
     const src = state.events.find(x => x.id === state.session.sourceEventId);
     const i = src && sessaoDe(src);
-    if (i && i.s1 > i.pe) { state.ultimoRedesenho = agora; renderDayColumns(); }
+    if (!!i !== !!state.preenchendo || (i && i.s1 > i.pe)) { state.ultimoRedesenho = agora; renderDayColumns(); }
   }
 }
 
