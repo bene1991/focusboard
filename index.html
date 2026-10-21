@@ -79,6 +79,7 @@
     #today-btn { padding: 0 10px !important; }
     #period-label { flex: 1; min-width: 0; margin-left: 4px !important; font-size: 13px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #new-btn { order: 5; }
+    #refresh-btn { order: 5; width: 28px !important; }
     #more-btn { display: flex !important; order: 6; }
     #view-btn, #fds-btn, #rel-btn, header > div:last-child { display: none !important; }
     header.menu-open #view-btn, header.menu-open #fds-btn, header.menu-open #rel-btn { display: block !important; order: 10; }
@@ -240,6 +241,7 @@
       <button id="view-btn" class="ml-3 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">Semana</button>
       <button id="fds-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800" title="Mostrar ou esconder sábado e domingo">Fim de semana</button>
       <button id="rel-btn" class="ml-1 px-3 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-xs hover:bg-neutral-800">📊 Relatórios</button>
+      <button id="refresh-btn" title="Atualizar" aria-label="Atualizar" class="ml-1 w-8 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 text-sm hover:bg-neutral-800">↻</button>
       <button id="more-btn" style="display:none" class="ml-1 w-8 h-8 rounded-md bg-neutral-900 border border-neutral-800 text-neutral-300 items-center justify-center" aria-label="Mais opções">⋯</button>
       <button id="new-btn" class="ml-1 px-3 h-8 rounded-md bg-sky-500 hover:bg-sky-400 text-black text-xs font-semibold">+ Novo</button>
     </div>
@@ -981,7 +983,7 @@ function ativarToque() {
 
 // Atualização automática (o app na tela de início não tem botão de recarregar).
 // BUILD é carimbado na hora de publicar; em "dev" (arquivo local) não faz nada.
-const BUILD = '20261020155620';
+const BUILD = '20261020233918';
 async function vigiarVersao() {
   if (BUILD === 'dev' || !/^https?:/.test(location.protocol)) return;
   const ocupado = () => document.querySelector('.arrasto') ||
@@ -1021,7 +1023,7 @@ function renderAll() {
 function renderPeriodLabel() {
   const dias = visibleDays();
   const label = state.view === 'day'
-    ? dias[0].toLocaleDateString('pt-BR', innerWidth < 640 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    ? dias[0].toLocaleDateString('pt-BR', innerWidth < 640 ? { weekday: 'short', day: 'numeric', month: 'numeric' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     // último dia visível, que não é sempre o 7º: sem fim de semana a semana acaba na sexta
     : innerWidth < 640 ? `${dias[0].getDate()}–${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}`
     : `${dias[0].toLocaleDateString('pt-BR',{day:'numeric',month:'short'})} – ${dias[dias.length - 1].toLocaleDateString('pt-BR',{day:'numeric',month:'short',year:'numeric'})}`;
@@ -2325,6 +2327,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   document.getElementById('rel-btn').onclick = abrirRelatorio;
   ativarToque();
+  // recarrega o app inteiro (o login fica guardado); o ?r= fura o cache do navegador
+  document.getElementById('refresh-btn').onclick = () => location.replace(location.pathname + '?r=' + Date.now());
   vigiarVersao();
   // menu ⋯ do celular: abre/fecha e fecha ao escolher uma opção
   const cab = document.querySelector('header');
