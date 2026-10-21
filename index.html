@@ -47,6 +47,11 @@
     .event-play::before { content: ""; position: absolute; inset: -8px; } /* área de toque maior que o desenho */
     .event:has(.event-play) .event-title { padding-right: 28px; }
     .event-compact .event-play { width: 20px !important; height: 20px !important; top: 50% !important; transform: translateY(-50%); }
+    /* alças de arrastar: só elas bloqueiam a rolagem, o resto do bloco continua rolando a página */
+    .grip { display: flex !important; position: absolute; left: 0; top: 0; bottom: 0; width: 22px; align-items: center; justify-content: center; font-size: 11px; letter-spacing: -2px; background: rgba(0,0,0,.14); color: rgba(0,0,0,.55); touch-action: none; z-index: 6; border-radius: 9px 0 0 9px; }
+    .alca { touch-action: none; }
+    .event:has(.grip) .event-title { padding-left: 16px; }
+    .event:has(.grip) .event-time, .event:has(.grip) .fill-info-linha { padding-left: 16px; }
     /* nome da atividade inteiro: quebra em linhas em vez de cortar em "Check-in…" */
     .event-title { white-space: normal !important; display: -webkit-box !important; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
     .event-compact .event-title { -webkit-line-clamp: 2; }
@@ -170,6 +175,7 @@
   .day-col { cursor: cell; }
   .event-movivel { cursor: grab; }
   .event-arrastando { opacity: 0.9; z-index: 40 !important; box-shadow: 0 10px 30px rgba(0,0,0,0.7); cursor: grabbing; }
+  .grip { display: none; }
   .alca {
     position: absolute; left: 0; right: 0; bottom: 0; height: 8px;
     cursor: ns-resize; z-index: 5;
@@ -960,8 +966,24 @@ function applyGridColumns() {
 function ativarToque() {
   const cont = document.getElementById('day-columns');
   let x0 = 0, y0 = 0, t0 = 0, alvo = null, moveu = false;
+  // alças (mover/redimensionar): arrasto imediato, sem segurar. touch-action:none nelas impede a rolagem.
+  let arrasto = false, ultT = null;
+  const mouse = (tipo, el, t) => (el || document).dispatchEvent(new MouseEvent(tipo, {
+    bubbles: true, cancelable: true, view: window, button: 0, clientX: t.clientX, clientY: t.clientY }));
   cont.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1) { moveu = true; return; }
+    const alca = e.target.closest('.grip, .alca');
+    if (!alca || e.touches.length !== 1) return;
+    arrasto = true; ultT = e.touches[0]; e.preventDefault();
+    if (navigator.vibrate) navigator.vibrate(10);
+    mouse('mousedown', alca.classList.contains('grip') ? alca.parentElement : alca, ultT);
+  }, { passive: false });
+  cont.addEventListener('touchmove', e => { if (!arrasto) return; ultT = e.touches[0]; e.preventDefault(); mouse('mousemove', document, ultT); }, { passive: false });
+  const soltou = e => { if (!arrasto) return; arrasto = false; e.preventDefault(); mouse('mouseup', document, ultT); };
+  cont.addEventListener('touchend', soltou, { passive: false });
+  cont.addEventListener('touchcancel', soltou, { passive: false });
+
+  cont.addEventListener('touchstart', e => {
+    if (arrasto || e.touches.length !== 1) { moveu = true; return; }
     const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); alvo = e.target; moveu = false;
   }, { passive: true });
   cont.addEventListener('touchmove', e => {
@@ -969,8 +991,8 @@ function ativarToque() {
     if (Math.abs(t.clientX - x0) > 12 || Math.abs(t.clientY - y0) > 12) moveu = true;
   }, { passive: true });
   cont.addEventListener('touchend', e => {
-    if (moveu || !alvo || Date.now() - t0 > 600) return;
-    if (alvo.closest('.event-play')) return; // o ▶ tem clique próprio
+    if (moveu || arrasto || !alvo || Date.now() - t0 > 600) return;
+    if (alvo.closest('.event-play, .grip, .alca')) return; // o ▶ tem clique próprio
     const bloco = alvo.closest('.event');
     if (bloco) { e.preventDefault(); abrirEvento(bloco.dataset.id); return; }
     const col = alvo.closest('.day-col');
@@ -983,7 +1005,7 @@ function ativarToque() {
 
 // Atualização automática (o app na tela de início não tem botão de recarregar).
 // BUILD é carimbado na hora de publicar; em "dev" (arquivo local) não faz nada.
-const BUILD = '20261020233918';
+const BUILD = '20261020234109';
 async function vigiarVersao() {
   if (BUILD === 'dev' || !/^https?:/.test(location.protocol)) return;
   const ocupado = () => document.querySelector('.arrasto') ||
@@ -1411,6 +1433,9 @@ function ativarArrastoEvento(el, ev) {
   const alca = document.createElement('div');
   alca.className = 'alca';
   el.appendChild(alca);
+  const grip = document.createElement('div'); // celular: arrastar por aqui move o bloco
+  grip.className = 'grip'; grip.textContent = '⋮⋮';
+  el.appendChild(grip);
 
   el.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
