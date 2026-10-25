@@ -2034,13 +2034,45 @@ async function abrirEvento(id) {
     ev.description ? ['Descrição', ev.description] : null,
   ].filter(Boolean);
 
+  // Sessões vinculadas: a sessão realizada não aparece na grade, então o
+  // caminho para ver e apagar é aqui no evento planejado. A sessão em
+  // andamento fica de fora (apagá-la quebraria o cronômetro).
+  const vinculadas = ev._kind === 'planned'
+    ? state.events.filter(x => x._kind === 'realized' && x._origemId === ev.id
+        && x.start.dateTime && x.end.dateTime
+        && !(state.session && x.id === state.session.gEventId))
+    : [];
+
   document.getElementById('event-modal-title').textContent = ev.summary || '(sem título)';
   document.getElementById('event-modal-bar').style.background = corDoEvento(ev);
-  document.getElementById('event-modal-body').innerHTML = linhas.map(([rot, val]) => `
+
+  const sessoesHtml = vinculadas.length ? `
+    <div class="pt-3 mt-3 border-t border-neutral-800">
+      <dt class="text-[11px] uppercase tracking-wider text-neutral-500">Sessões registradas</dt>
+      ${vinculadas.map(s => {
+        const i = new Date(s.start.dateTime), f = new Date(s.end.dateTime);
+        return `<div class="flex items-center justify-between gap-2 py-1 text-neutral-200">
+          <span>${i.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · ${zHm(i)}–${zHm(f)} · ${fmtDur(f - i)}</span>
+          <button data-apagar-sessao="${escapeHtml(s.id)}" title="Apagar sessão" class="text-red-400 hover:text-red-300 px-2">🗑</button>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  document.getElementById('event-modal-body').innerHTML =
+    linhas.map(([rot, val]) => `
     <div>
       <dt class="text-[11px] uppercase tracking-wider text-neutral-500">${escapeHtml(rot)}</dt>
       <dd class="text-neutral-200 whitespace-pre-wrap break-words">${escapeHtml(val)}</dd>
-    </div>`).join('');
+    </div>`).join('') + sessoesHtml;
+
+  document.querySelectorAll('[data-apagar-sessao]').forEach(b => {
+    b.onclick = async () => {
+      const s = state.events.find(x => x.id === b.dataset.apagarSessao);
+      if (!s) return;
+      fecharEvento();
+      await apagarSessao(s);
+    };
+  });
 
   const link = document.getElementById('event-modal-link');
   if (ev.htmlLink) { link.href = ev.htmlLink; link.style.display = ''; }
