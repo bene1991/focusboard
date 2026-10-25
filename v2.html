@@ -1088,20 +1088,32 @@ function renderDayColumns() {
     // vinculada a ele não vira bloco separado (o planejado já a representa).
     const agora = Date.now();
     const planejadosDoDia = new Set(dayEvents.filter(e => e._kind === 'planned').map(e => e.id));
+    // O recorte é calculado antes de decidir o que desenhar: um planejado zerado some da
+    // grade, mas a sessão realizada que o consumiu continua (é o registro do que foi feito).
+    // A ordem dos eventos no dia não pode mudar essa decisão, daí a passada separada.
+    const recortes = new Map();
+    for (const ev of dayEvents) {
+      if (ev._kind !== 'planned' || !ev.start.dateTime) continue;
+      const consumido = Tempo.consumoDaAtividade(state.events, state.session, ev.id, agora);
+      recortes.set(ev.id, Tempo.recortePlanejado(ev, consumido));
+    }
+    const concluidos = new Set();
+    for (const [id, r] of recortes) if (r && r.concluido) concluidos.add(id);
+
     const visiveis = [];
     for (const ev of dayEvents) {
       if (ev._kind === 'planned' && ev.start.dateTime) {
-        const consumido = Tempo.consumoDaAtividade(state.events, state.session, ev.id, agora);
-        const r = Tempo.recortePlanejado(ev, consumido);
+        const r = recortes.get(ev.id);
         if (!r || r.consumidoMs === 0) { visiveis.push(ev); continue; }
-        if (r.concluido) continue; // zerou: some da grade
+        if (r.concluido) continue; // zerou: some da grade e a realizada aparece no lugar
         visiveis.push({
           ...ev,
           start: { ...ev.start, dateTime: r.inicio.toISOString() },
           end: { ...ev.end, dateTime: r.fimRestante.toISOString() },
           _recorte: r,
         });
-      } else if (ev._kind === 'realized' && ev._origemId && planejadosDoDia.has(ev._origemId)) {
+      } else if (ev._kind === 'realized' && ev._origemId &&
+                 planejadosDoDia.has(ev._origemId) && !concluidos.has(ev._origemId)) {
         continue;
       } else {
         visiveis.push(ev);
