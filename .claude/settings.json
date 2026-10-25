@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(open \"/Users/vinicius/Foco no trabalho/index.html\")",
+      "Bash(python3 -m http.server 8080)",
+      "Bash(curl -sI http://localhost:8080/)",
+      "Bash(ipconfig getifaddr *)",
+      "Bash(open \"http://localhost:8080/\")"
+    ]
+  }
+}
