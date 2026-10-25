@@ -9,7 +9,7 @@
     return Math.max(0, ms);
   }
 
-  // Minutos consumidos de um evento planejado: sessões realizadas vinculadas a ele.
+  // Tempo consumido (ms) de um evento planejado: sessões realizadas vinculadas a ele.
   // A sessão em andamento entra pelo cronômetro (o evento no Google ainda tem fim provisório).
   function consumoDaAtividade(eventos, sessao, idEvento, agoraMs) {
     let ms = 0;

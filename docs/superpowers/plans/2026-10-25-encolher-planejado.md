@@ -507,3 +507,88 @@ Expected: `modalAberto: true`, `lista: true`.
 - [ ] `grep -n "sessaoDe\|textoPreenchimento\|atualizarPreenchimento\|preenchendo\|event-fill\|fill-info" v2.html` → vazio.
 - [ ] Smoke das Tasks 2, 3 e 4 com os valores esperados.
 - [ ] Abrir o app conectado ao Google e conferir com uma atividade real: play, parar, bloco encolhido; apagar a sessão pelo modal do planejado, bloco volta; conferir que a mesma atividade na semana seguinte continua cheia.
+
+---
+
+## Correções pós-review final
+
+Os trechos de código das Tasks 1–4 acima são históricos: três defeitos encontrados na revisão final
+foram corrigidos depois e **o código abaixo substitui o que está escrito nas tasks**. Quem for
+reimplementar deve usar estas versões.
+
+### 1. Excedente mostrava o bloco realizado errado (Task 3, `atualizarRestante`)
+
+Quando o consumo alcança o total do planejado, `atualizarRestante()` chama `renderDayColumns()`, mas
+o evento realizado em `state.events` ainda tem o fim provisório de `+30min` criado por `startSession`
+(o `baterPonto()` grava só no Google). Uma sessão de 150min desenhava um bloco de 32px
+(`09:00–09:30`) em vez de 2h30.
+
+Correção: ao detectar `r.concluido`, acertar o fim local do evento realizado antes de redesenhar
+(sem chamada de rede no tique):
+
+```js
+  if (r.concluido) {
+    const realizado = state.events.find(e => e.id === sess.gEventId);
+    if (realizado && realizado.end) {
+      realizado.end.dateTime =
+        new Date(sess.startedAt + Tempo.decorridoDaSessao(sess, Date.now())).toISOString();
+    }
+    renderDayColumns();
+    return;
+  }
+```
+
+### 2. Altura ao vivo ignorava o clamp de meia-noite/fim do dia (Task 3, `atualizarRestante`)
+
+`renderEvent` tratava bloco cruzando a meia-noite (`if (endH <= startH) endH = HOUR_END + 1`) e
+limitava a `HOUR_END + 1`; o tique calculava a altura crua. Um bloco 23:00–01:00 colapsava para os
+18px mínimos no primeiro tique.
+
+Correção: extrair a geometria para um helper único, usado pelos dois:
+
+```js
+function geometriaDoBloco(inicio, fim) {
+  const startH = zDec(inicio);
+  let endH = zDec(fim);
+  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
+  const clampedStart = Math.max(startH, HOUR_START);
+  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
+  return {
+    top: (clampedStart - HOUR_START) * HOUR_HEIGHT,
+    height: Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2),
+  };
+}
+```
+
+`renderEvent` passa a fazer `const { top, height } = geometriaDoBloco(start, end);` e
+`atualizarRestante` faz `el.style.height = geometriaDoBloco(r.inicio, r.fimRestante).height + 'px';`.
+
+### 3. Planejado sem duração válida escondia a sessão realizada (Task 2, `renderDayColumns`)
+
+A regra de esconder só olhava `planejadosDoDia.has(ev._origemId)`. Com `start == end`,
+`Tempo.recortePlanejado` devolve `null`, o planejado aparece cheio e a sessão realizada sumia —
+contra o Review Focus ("evento sem duração válida renderiza como hoje").
+
+Correção: decidir pelo recorte válido, e não pela presença do planejado no dia. Os conjuntos
+`planejadosDoDia` e `concluidos` deixam de existir:
+
+```js
+      } else if (ev._kind === 'realized' && ev._origemId) {
+        // A sessão só some quando o planejado dela tem recorte válido e ainda não zerou.
+        // Sem recorte (duração inválida, dia inteiro) ou de outro dia, ela continua visível.
+        const r = recortes.get(ev._origemId);
+        if (r && r.consumidoMs > 0 && !r.concluido) continue;
+        visiveis.push(ev);
+      } else {
+        visiveis.push(ev);
+      }
+```
+
+### Também
+
+- `tempo.js`: comentário de `consumoDaAtividade` corrigido para "Tempo consumido (ms)" (os valores
+  são milissegundos, não minutos).
+- Smoke destas correções (estado falso): excedente de 150min num planejado 9–11 → planejado ausente e
+  realizada `09:00–11:30` com 168px; planejado 23:00–01:00 com 30min consumidos → altura ao vivo
+  66px (não 18px); planejado 9–9 + realizada 9–10 → os dois visíveis; regressão 9–11 + realizada 9–10
+  → planejado 66px/`09:00–10:00` com badge e realizada escondida.

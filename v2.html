@@ -1078,7 +1078,6 @@ function renderDayColumns() {
     // O planejado é desenhado com o tempo que ainda falta; a sessão realizada
     // vinculada a ele não vira bloco separado (o planejado já a representa).
     const agora = Date.now();
-    const planejadosDoDia = new Set(dayEvents.filter(e => e._kind === 'planned').map(e => e.id));
     // O recorte é calculado antes de decidir o que desenhar: um planejado zerado some da
     // grade, mas a sessão realizada que o consumiu continua (é o registro do que foi feito).
     // A ordem dos eventos no dia não pode mudar essa decisão, daí a passada separada.
@@ -1088,8 +1087,6 @@ function renderDayColumns() {
       const consumido = Tempo.consumoDaAtividade(state.events, state.session, ev.id, agora);
       recortes.set(ev.id, Tempo.recortePlanejado(ev, consumido));
     }
-    const concluidos = new Set();
-    for (const [id, r] of recortes) if (r && r.concluido) concluidos.add(id);
 
     const visiveis = [];
     for (const ev of dayEvents) {
@@ -1103,9 +1100,12 @@ function renderDayColumns() {
           end: { ...ev.end, dateTime: r.fimRestante.toISOString() },
           _recorte: r,
         });
-      } else if (ev._kind === 'realized' && ev._origemId &&
-                 planejadosDoDia.has(ev._origemId) && !concluidos.has(ev._origemId)) {
-        continue;
+      } else if (ev._kind === 'realized' && ev._origemId) {
+        // A sessão só some quando o planejado dela tem recorte válido e ainda não zerou.
+        // Sem recorte (duração inválida, dia inteiro) ou de outro dia, ela continua visível.
+        const r = recortes.get(ev._origemId);
+        if (r && r.consumidoMs > 0 && !r.concluido) continue;
+        visiveis.push(ev);
       } else {
         visiveis.push(ev);
       }
@@ -1296,6 +1296,22 @@ function fmtDur(ms) {
   const h = Math.floor(m / 60), resto = m % 60;
   return resto ? `${h}h${pad(resto)}` : `${h}h`;
 }
+// Geometria vertical de um bloco: topo e altura em px a partir do início e do fim.
+// Fica num lugar só porque o desenho (renderEvent) e o tique do cronômetro
+// (atualizarRestante) precisam concordar no clamp de meia-noite, no fim do dia
+// e na altura mínima — senão o bloco ao vivo colapsa e depois "salta" ao redesenhar.
+function geometriaDoBloco(inicio, fim) {
+  const startH = zDec(inicio);
+  let endH = zDec(fim);
+  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
+  const clampedStart = Math.max(startH, HOUR_START);
+  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
+  return {
+    top: (clampedStart - HOUR_START) * HOUR_HEIGHT,
+    height: Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2),
+  };
+}
+
 // A cada segundo, atualiza só o bloco planejado da sessão em andamento.
 function atualizarRestante() {
   const sess = state.session;
@@ -1308,8 +1324,19 @@ function atualizarRestante() {
   const consumido = Tempo.consumoDaAtividade(state.events, sess, origem.id, Date.now());
   const r = Tempo.recortePlanejado(origem, consumido);
   if (!r) return;
-  if (r.concluido) { renderDayColumns(); return; }
-  el.style.height = Math.max(18, (zDec(r.fimRestante) - zDec(r.inicio)) * HOUR_HEIGHT - 2) + 'px';
+  if (r.concluido) {
+    // O evento realizado local nasceu com fim provisório (+30min) e o baterPonto só
+    // atualiza o Google. Antes de redesenhar, acerta o fim local com o tempo realmente
+    // trabalhado — senão o bloco que substitui o planejado mostraria 30min, não o total.
+    const realizado = state.events.find(e => e.id === sess.gEventId);
+    if (realizado && realizado.end) {
+      realizado.end.dateTime =
+        new Date(sess.startedAt + Tempo.decorridoDaSessao(sess, Date.now())).toISOString();
+    }
+    renderDayColumns();
+    return;
+  }
+  el.style.height = geometriaDoBloco(r.inicio, r.fimRestante).height + 'px';
   const rotulo = `${zHm(r.inicio)}–${zHm(r.fimRestante)}`;
   const t = el.querySelector('.event-time') || el.querySelector('.event-time-inline');
   if (t) t.textContent = rotulo;
@@ -1320,13 +1347,7 @@ function atualizarRestante() {
 function renderEvent(ev, lane = 0, lanes = 1) {
   const start = new Date(ev.start.dateTime || ev.start.date);
   const end = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime || ev.start.date);
-  const startH = zDec(start);
-  let endH = zDec(end);
-  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
-  const clampedStart = Math.max(startH, HOUR_START);
-  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
-  const top = (clampedStart - HOUR_START) * HOUR_HEIGHT;
-  const height = Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2);
+  const { top, height } = geometriaDoBloco(start, end);
   const width = 100 / lanes;
   const left = lane * width;
   const isActive = state.session && state.session.gEventId === ev.id;
