@@ -1271,14 +1271,9 @@ function fmtDur(ms) {
 // e na altura mínima — senão o bloco ao vivo colapsa e depois "salta" ao redesenhar.
 function geometriaDoBloco(inicio, fim) {
   const startH = zDec(inicio);
-  let endH = zDec(fim);
-  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
-  const clampedStart = Math.max(startH, HOUR_START);
-  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
-  return {
-    top: (clampedStart - HOUR_START) * HOUR_HEIGHT,
-    height: Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2),
-  };
+  const endH = zDec(fim);
+  const cruzaDia = zDate(inicio) !== zDate(fim);
+  return Tempo.geometriaNaGrade(startH, endH, cruzaDia, HOUR_START, HOUR_END, HOUR_HEIGHT);
 }
 
 // A cada segundo, atualiza só o bloco planejado da sessão em andamento.
@@ -1320,7 +1315,7 @@ function renderEvent(ev, lane = 0, lanes = 1) {
   const width = 100 / lanes;
   const left = lane * width;
   const isActive = state.session && state.session.gEventId === ev.id;
-  const timeStr = `${zHm(start)}–${zHm(end)}`;
+  const timeStr = Tempo.rotuloDoHorario(zHm(start), zHm(end), !!isActive);
   const recorte = ev._recorte || null;
   const restoStr = recorte && recorte.consumidoMs > 0
     ? `${fmtDur(recorte.consumidoMs)} feita · falta ${fmtDur(recorte.restanteMs)}`
