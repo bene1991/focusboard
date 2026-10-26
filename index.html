@@ -976,7 +976,7 @@ function ativarToque() {
 
 // Atualização automática (o app na tela de início não tem botão de recarregar).
 // BUILD é carimbado na hora de publicar; em "dev" (arquivo local) não faz nada.
-const BUILD = '20261026095137';
+const BUILD = '20261026095725';
 async function vigiarVersao() {
   if (BUILD === 'dev' || !/^https?:/.test(location.protocol)) return;
   const ocupado = () => document.querySelector('.arrasto') ||
@@ -1103,8 +1103,10 @@ function renderDayColumns() {
       } else if (ev._kind === 'realized' && ev._origemId) {
         // A sessão só some quando o planejado dela tem recorte válido e ainda não zerou.
         // Sem recorte (duração inválida, dia inteiro) ou de outro dia, ela continua visível.
+        // A que está rodando nunca some: é o "estou aqui agora" na grade.
         const r = recortes.get(ev._origemId);
-        if (r && r.consumidoMs > 0 && !r.concluido) continue;
+        const rodandoAqui = !!(state.session && state.session.gEventId === ev.id);
+        if (!rodandoAqui && r && r.consumidoMs > 0 && !r.concluido) continue;
         visiveis.push(ev);
       } else {
         visiveis.push(ev);
