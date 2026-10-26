@@ -1,6 +1,6 @@
 # Encolher atividade planejada conforme o play — Plano de Implementação
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** O tempo de foco registrado numa atividade planejada passa a consumir o bloco planejado daquela ocorrência, que encolhe em tempo real e some quando zera — sem tocar no Google Calendar e sem afetar séries recorrentes.
 
@@ -45,7 +45,7 @@
   - `Tempo.consumoDaAtividade(eventos, sessao, idEvento: string, agoraMs: number) -> number` (ms)
   - `Tempo.recortePlanejado(ev, consumidoMs: number) -> { inicio: Date, fimOriginal: Date, fimRestante: Date, totalMs: number, consumidoMs: number, restanteMs: number, concluido: boolean } | null`
 
-- [ ] **Step 1: Escrever os testes que falham**
+- [x] **Step 1: Escrever os testes que falham**
 
 Criar `tests/tempo.test.js`:
 
@@ -134,12 +134,12 @@ test('recortePlanejado devolve null para evento sem duração válida', () => {
 });
 ```
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [x] **Step 2: Rodar e ver falhar**
 
 Run: `node --test tests/tempo.test.js`
 Expected: FAIL — `Cannot find module '../tempo.js'`.
 
-- [ ] **Step 3: Implementar `tempo.js`**
+- [x] **Step 3: Implementar `tempo.js`**
 
 ```js
 (function (raiz) {
@@ -194,7 +194,7 @@ Expected: FAIL — `Cannot find module '../tempo.js'`.
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 ```
 
-- [ ] **Step 4: Rodar e ver passar**
+- [x] **Step 4: Rodar e ver passar**
 
 Run: `node --test tests/tempo.test.js`
 Expected: PASS — 12 testes.
@@ -211,7 +211,7 @@ Expected: PASS — 12 testes.
 - Consumes: `Tempo.consumoDaAtividade`, `Tempo.recortePlanejado` (Task 1).
 - Produces: eventos planejados com `_recorte` no momento do desenho; classe CSS `.event-resto`; `fmtDur` passa a omitir `00`.
 
-- [ ] **Step 1: Carregar o módulo**
+- [x] **Step 1: Carregar o módulo**
 
 Em `v2.html`, imediatamente antes da linha `<script>` do script inline (a que abre o bloco que define `state`), inserir:
 
@@ -219,7 +219,7 @@ Em `v2.html`, imediatamente antes da linha `<script>` do script inline (a que ab
 <script src="tempo.js"></script>
 ```
 
-- [ ] **Step 2: Encolher e filtrar em `renderDayColumns`**
+- [x] **Step 2: Encolher e filtrar em `renderDayColumns`**
 
 Substituir todo o trecho que hoje vai de `let lista = dayEvents;` até a linha `for (const [ev, lane, lanes] of layoutDay(lista)) html += renderEvent(ev, lane, lanes);` — isso inclui `sessAtiva`, `origem`, `sessaoDe`, `state.preenchendo` e o `trecho` — por:
 
@@ -252,7 +252,7 @@ Substituir todo o trecho que hoje vai de `let lista = dayEvents;` até a linha `
 
 Remover também `state.preenchendo = false;` no início de `renderDayColumns`.
 
-- [ ] **Step 3: Ajustar `renderEvent`**
+- [x] **Step 3: Ajustar `renderEvent`**
 
 Trocar a linha do `seguindo` e a do `playBtn` por:
 
@@ -280,7 +280,7 @@ No HTML do bloco, antes de `${playBtn}`:
       ${restoStr && !compact ? `<div class="event-resto">${restoStr}</div>` : ''}
 ```
 
-- [ ] **Step 4: Deixar `fmtDur` legível**
+- [x] **Step 4: Deixar `fmtDur` legível**
 
 Trocar a função `fmtDur` por:
 
@@ -293,7 +293,7 @@ function fmtDur(ms) {
 }
 ```
 
-- [ ] **Step 5: CSS do texto de saldo**
+- [x] **Step 5: CSS do texto de saldo**
 
 Adicionar junto às regras `.event-title`:
 
@@ -301,16 +301,16 @@ Adicionar junto às regras `.event-title`:
   .event-resto { font-size: 10px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 ```
 
-- [ ] **Step 6: Service worker**
+- [x] **Step 6: Service worker**
 
 Em `sw.js`, trocar `const CACHE = 'focusboard-v38';` por `'focusboard-v39'` e adicionar `'./tempo.js'` ao `ASSETS`.
 
-- [ ] **Step 7: Testes unitários continuam passando**
+- [x] **Step 7: Testes unitários continuam passando**
 
 Run: `node --test tests/tempo.test.js`
 Expected: PASS — 12 testes.
 
-- [ ] **Step 8: Smoke no navegador**
+- [x] **Step 8: Smoke no navegador**
 
 ```bash
 cd "/Users/vinicius/Foco no trabalho" && python3 -m http.server 8080
@@ -353,7 +353,7 @@ Repetir sem a sessão realizada (`state.events = [só o p1]`): bloco volta a `13
 - Consumes: `Tempo.consumoDaAtividade`, `Tempo.recortePlanejado`, `fmtDur`, `HOUR_HEIGHT`, `zDec`, `zHm` (já existentes).
 - Produces: `atualizarRestante()` chamada a cada segundo pelo `tickTimer`.
 
-- [ ] **Step 1: Criar `atualizarRestante`**
+- [x] **Step 1: Criar `atualizarRestante`**
 
 Adicionar onde estava `atualizarPreenchimento`:
 
@@ -380,11 +380,11 @@ function atualizarRestante() {
 }
 ```
 
-- [ ] **Step 2: Chamar no tique**
+- [x] **Step 2: Chamar no tique**
 
 Em `tickTimer`, trocar `atualizarPreenchimento();` por `atualizarRestante();`.
 
-- [ ] **Step 3: Remover o código morto do preenchimento**
+- [x] **Step 3: Remover o código morto do preenchimento**
 
 Apagar:
 
@@ -401,12 +401,12 @@ grep -n "sessaoDe\|textoPreenchimento\|atualizarPreenchimento\|preenchendo\|even
 
 Expected: nenhuma linha.
 
-- [ ] **Step 4: Testes unitários**
+- [x] **Step 4: Testes unitários**
 
 Run: `node --test tests/tempo.test.js`
 Expected: PASS — 12 testes.
 
-- [ ] **Step 5: Smoke da sessão em andamento**
+- [x] **Step 5: Smoke da sessão em andamento**
 
 Com o estado falso da Task 2, substituir os eventos por um planejado e a sessão em andamento (sem sessão já concluída):
 
@@ -439,7 +439,7 @@ Expected: `altura: "100px"` (1h30 restante), `horario: "09:00–10:30"`, `saldo:
 - Consumes: `state.events`, `fmtDur`, `zHm`, `apagarSessao(ev)` (existente).
 - Produces: botões `[data-apagar-sessao]` no corpo do modal do evento planejado.
 
-- [ ] **Step 1: Listar as sessões vinculadas no modal**
+- [x] **Step 1: Listar as sessões vinculadas no modal**
 
 Em `abrirEvento`, depois do `const linhas = [...]`:
 
@@ -486,7 +486,7 @@ Trocar o `document.getElementById('event-modal-body').innerHTML = linhas.map(...
   });
 ```
 
-- [ ] **Step 2: Smoke do modal**
+- [x] **Step 2: Smoke do modal**
 
 Com o estado falso da Task 2, executar `await abrirEvento('p1')` e conferir:
 
@@ -503,9 +503,9 @@ Expected: `modalAberto: true`, `lista: true`.
 
 ## Verificação final
 
-- [ ] `node --test tests/tempo.test.js` → 12 PASS.
-- [ ] `grep -n "sessaoDe\|textoPreenchimento\|atualizarPreenchimento\|preenchendo\|event-fill\|fill-info" v2.html` → vazio.
-- [ ] Smoke das Tasks 2, 3 e 4 com os valores esperados.
+- [x] `node --test tests/tempo.test.js` → 12 PASS.
+- [x] `grep -n "sessaoDe\|textoPreenchimento\|atualizarPreenchimento\|preenchendo\|event-fill\|fill-info" v2.html` → vazio.
+- [x] Smoke das Tasks 2, 3 e 4 com os valores esperados.
 - [ ] Abrir o app conectado ao Google e conferir com uma atividade real: play, parar, bloco encolhido; apagar a sessão pelo modal do planejado, bloco volta; conferir que a mesma atividade na semana seguinte continua cheia.
 
 ---
