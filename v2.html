@@ -1103,8 +1103,10 @@ function renderDayColumns() {
       } else if (ev._kind === 'realized' && ev._origemId) {
         // A sessão só some quando o planejado dela tem recorte válido e ainda não zerou.
         // Sem recorte (duração inválida, dia inteiro) ou de outro dia, ela continua visível.
+        // A que está rodando nunca some: é o "estou aqui agora" na grade.
         const r = recortes.get(ev._origemId);
-        if (r && r.consumidoMs > 0 && !r.concluido) continue;
+        const rodandoAqui = !!(state.session && state.session.gEventId === ev.id);
+        if (!rodandoAqui && r && r.consumidoMs > 0 && !r.concluido) continue;
         visiveis.push(ev);
       } else {
         visiveis.push(ev);

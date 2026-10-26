@@ -60,6 +60,9 @@ Observações:
 - O bloco planejado mantém o **início** e encolhe pelo **fim** (9h–11h com 1h feita vira 9h–10h).
   *(decisão minha; corrija se preferir encolher pelo início)*
 - O texto de horário do bloco mostra o intervalo restante calculado.
+- A sessão **em andamento** também aparece na grade, no horário real em que o play foi apertado
+  (bloco vermelho). As sessões **já concluídas** continuam ocultas enquanto o planejado tem
+  saldo — nelas, o planejado encolhido é o bloco único.
 - Quando `restante == 0`, o bloco planejado some da grade; fica só a sessão realizada.
 - Se trabalhar mais que o planejado, não há valor negativo: o bloco some e o excedente aparece
   apenas na sessão realizada.
