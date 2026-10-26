@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { decorridoDaSessao, consumoDaAtividade, recortePlanejado } = require('../tempo.js');
+const {
+  decorridoDaSessao,
+  consumoDaAtividade,
+  recortePlanejado,
+  prepararEventosDaGrade,
+} = require('../tempo.js');
 
 const MIN = 60000;
 const iso = (min) => new Date(Date.UTC(2026, 9, 25, 9, min)).toISOString();
@@ -79,4 +84,19 @@ test('recortePlanejado zera quando o consumo passa do total', () => {
 test('recortePlanejado devolve null para evento sem duração válida', () => {
   assert.equal(recortePlanejado(planejado('p1', 60, 60), 0), null);
   assert.equal(recortePlanejado({ id: 'x', start: {}, end: {} }, 0), null);
+});
+
+test('grade mantém visível a sessão finalizada vinculada ao planejado', () => {
+  const plano = planejado('p1', 0, 120);
+  const sessaoFinalizada = realizado('r1', 'p1', 130, 160);
+
+  const visiveis = prepararEventosDaGrade(
+    [plano, sessaoFinalizada],
+    [plano, sessaoFinalizada],
+    null,
+    0,
+  );
+
+  assert.deepEqual(visiveis.map(ev => ev.id), ['p1', 'r1']);
+  assert.equal(visiveis[0]._recorte.restanteMs, 90 * MIN);
 });

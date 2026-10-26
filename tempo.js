@@ -44,7 +44,47 @@
     };
   }
 
-  const api = { decorridoDaSessao, consumoDaAtividade, recortePlanejado };
+  // Prepara os eventos com horário que serão desenhados na grade.
+  // O planejado encolhe conforme o tempo executado, mas cada sessão realizada
+  // continua visível no horário real — inclusive depois de finalizada.
+  function prepararEventosDaGrade(eventosDoDia, todosEventos, sessao, agoraMs) {
+    const recortes = new Map();
+    for (const ev of eventosDoDia || []) {
+      if (ev._kind !== 'planned' || !ev.start || !ev.start.dateTime) continue;
+      const consumido = consumoDaAtividade(todosEventos, sessao, ev.id, agoraMs);
+      recortes.set(ev.id, recortePlanejado(ev, consumido));
+    }
+
+    const visiveis = [];
+    for (const ev of eventosDoDia || []) {
+      if (ev._kind !== 'planned' || !ev.start || !ev.start.dateTime) {
+        visiveis.push(ev);
+        continue;
+      }
+
+      const recorte = recortes.get(ev.id);
+      if (!recorte || recorte.consumidoMs === 0) {
+        visiveis.push(ev);
+        continue;
+      }
+      if (recorte.concluido) continue;
+
+      visiveis.push({
+        ...ev,
+        start: { ...ev.start, dateTime: recorte.inicio.toISOString() },
+        end: { ...ev.end, dateTime: recorte.fimRestante.toISOString() },
+        _recorte: recorte,
+      });
+    }
+    return visiveis;
+  }
+
+  const api = {
+    decorridoDaSessao,
+    consumoDaAtividade,
+    recortePlanejado,
+    prepararEventosDaGrade,
+  };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else raiz.Tempo = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

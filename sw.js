@@ -1,4 +1,4 @@
-const CACHE = 'focusboard-v40';
+const CACHE = 'focusboard-v41';
 const ASSETS = ['./index.html', './v2.html', './tempo.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
