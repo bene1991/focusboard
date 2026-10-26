@@ -1,5 +1,5 @@
-const CACHE = 'focusboard-v38';
-const ASSETS = ['./v2.html', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'focusboard-v40';
+const ASSETS = ['./index.html', './v2.html', './tempo.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

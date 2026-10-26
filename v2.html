@@ -108,16 +108,8 @@
   .event-planned { background: rgba(56,189,248,0.15); border-left: 3px solid #38bdf8; color: #bae6fd; }
   .event-realized { background: rgba(34,197,94,0.15); border-left: 3px solid #22c55e; color: #bbf7d0; }
   .event-active { background: rgba(239,68,68,0.28); border-left: 3px solid #ef4444; color: #fecaca; box-shadow: 0 0 24px rgba(239,68,68,0.35); }
-  /* sessão rodando dentro de uma tarefa planejada: o bloco enche em vez de abrir outro ao lado */
-  .event-seguindo { background: #8f95c9 !important; }
-  .event-fill { position: absolute; left: 0; right: 0; z-index: 0; background: linear-gradient(#5b63b8, #4a52a8); border-bottom: 3px solid #ef4444; transition: height .6s linear; pointer-events: none; }
-  .event-fill::after { content: ""; position: absolute; right: 8px; bottom: -9px; width: 12px; height: 12px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.35); }
-  .event-seguindo > *:not(.event-fill):not(.event-play):not(.alca) { position: relative; z-index: 1; }
-  .event-seguindo.fill-claro .event-title, .event-seguindo.fill-claro .event-time { color: #fff; }
-  .fill-info { font-weight: 600; }
-  .fill-info.alem { color: #b91c1c; }
-  .event-seguindo.fill-claro .fill-info.alem { color: #fecaca; }
   .event-title { font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-resto { font-size: 10px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .event-compact { padding: 0 9px; font-size: 12px; justify-content: center; border-radius: 7px; }
   .dia-btn {
     width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
@@ -464,6 +456,7 @@
   </div>
 </div>
 
+<script src="tempo.js"></script>
 <script>
 'use strict';
 
@@ -1059,7 +1052,6 @@ function renderDayColumns() {
   const todayStr = zDate(new Date());
   const container = document.getElementById('day-columns');
   container.innerHTML = '';
-  state.preenchendo = false;
 
   for (const d of visibleDays()) {
     const dateStr = ymd(d);
@@ -1083,21 +1075,42 @@ function renderDayColumns() {
       }
     }
     // events — com layout de colunas pra sobreposições (estilo Google Calendar)
-    let lista = dayEvents;
-    const sessAtiva = state.session;
-    const origem = sessAtiva && dayEvents.find(e => e.id === sessAtiva.sourceEventId && e._kind === 'planned');
-    const i = origem && sessaoDe(origem);
-    if (i) {
-      state.preenchendo = true;
-      lista = dayEvents.filter(e => e.id !== sessAtiva.gEventId);
-      const real = state.events.find(e => e.id === sessAtiva.gEventId);
-      if (real) {
-        const trecho = (ini, fim) => ({ ...real, start: { dateTime: new Date(ini).toISOString() }, end: { dateTime: new Date(fim).toISOString() } });
-        if (i.s0 < i.ps) lista.push(trecho(i.s0, Math.min(i.ps, i.s1)));
-        if (i.s1 > i.pe) lista.push(trecho(Math.max(i.pe, i.s0), i.s1));
+    // O planejado é desenhado com o tempo que ainda falta; a sessão realizada
+    // vinculada a ele não vira bloco separado (o planejado já a representa).
+    const agora = Date.now();
+    // O recorte é calculado antes de decidir o que desenhar: um planejado zerado some da
+    // grade, mas a sessão realizada que o consumiu continua (é o registro do que foi feito).
+    // A ordem dos eventos no dia não pode mudar essa decisão, daí a passada separada.
+    const recortes = new Map();
+    for (const ev of dayEvents) {
+      if (ev._kind !== 'planned' || !ev.start.dateTime) continue;
+      const consumido = Tempo.consumoDaAtividade(state.events, state.session, ev.id, agora);
+      recortes.set(ev.id, Tempo.recortePlanejado(ev, consumido));
+    }
+
+    const visiveis = [];
+    for (const ev of dayEvents) {
+      if (ev._kind === 'planned' && ev.start.dateTime) {
+        const r = recortes.get(ev.id);
+        if (!r || r.consumidoMs === 0) { visiveis.push(ev); continue; }
+        if (r.concluido) continue; // zerou: some da grade e a realizada aparece no lugar
+        visiveis.push({
+          ...ev,
+          start: { ...ev.start, dateTime: r.inicio.toISOString() },
+          end: { ...ev.end, dateTime: r.fimRestante.toISOString() },
+          _recorte: r,
+        });
+      } else if (ev._kind === 'realized' && ev._origemId) {
+        // A sessão só some quando o planejado dela tem recorte válido e ainda não zerou.
+        // Sem recorte (duração inválida, dia inteiro) ou de outro dia, ela continua visível.
+        const r = recortes.get(ev._origemId);
+        if (r && r.consumidoMs > 0 && !r.concluido) continue;
+        visiveis.push(ev);
+      } else {
+        visiveis.push(ev);
       }
     }
-    for (const [ev, lane, lanes] of layoutDay(lista)) html += renderEvent(ev, lane, lanes);
+    for (const [ev, lane, lanes] of layoutDay(visiveis)) html += renderEvent(ev, lane, lanes);
     html += '</div>';
     container.insertAdjacentHTML('beforeend', html);
   }
@@ -1277,70 +1290,74 @@ function corDoEvento(ev, semRecursao = false) {
 // Texto sempre preto nos blocos, como no bloco "Financeiro".
 function corDoTexto() { return '#1a1a1a'; }
 
-// Sessão rodando em cima de uma tarefa planejada: devolve a parte do tempo focado
-// que cai DENTRO do horário previsto (vira preenchimento) e os limites reais.
-// ponytail: conta do início até agora, pausas incluídas; descontar pausas se incomodar.
-function sessaoDe(ev) {
-  const sess = state.session;
-  if (!sess || !sess.sourceEventId || sess.sourceEventId !== ev.id || !ev.start.dateTime) return null;
-  const ps = +new Date(ev.start.dateTime), pe = +new Date(ev.end.dateTime || ev.start.dateTime);
-  if (pe <= ps) return null;
-  // começou depois do fim previsto (ex.: ▶ num check-in que já passou): não é "dentro" da tarefa,
-  // então vale o bloco vermelho normal no horário de agora, sem mexer no bloco antigo.
-  if (sess.startedAt >= pe) return null;
-  const s1 = Date.now();
-  // ▶ antes da hora: a tarefa ainda não começou, então não há o que preencher; vale o bloco vermelho de agora.
-  if (s1 < ps) return null;
-  const a = Math.max(sess.startedAt, ps), b = Math.max(a, Math.min(s1, pe));
-  return { ps, pe, a, b, s0: sess.startedAt, s1 };
-}
 function fmtDur(ms) {
   const m = Math.max(0, Math.round(ms / 60000));
-  return m >= 60 ? `${Math.floor(m / 60)}h${pad(m % 60)}` : `${m}min`;
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60), resto = m % 60;
+  return resto ? `${h}h${pad(resto)}` : `${h}h`;
 }
-function textoPreenchimento(i) {
-  const feitos = fmtDur(i.s1 - i.s0) + ' feitos';
-  return i.s1 > i.pe ? `${feitos} · <span class="fill-info alem">+${fmtDur(i.s1 - i.pe)} além</span>` : `${feitos} · faltam ${fmtDur(i.pe - i.s1)}`;
+// Geometria vertical de um bloco: topo e altura em px a partir do início e do fim.
+// Fica num lugar só porque o desenho (renderEvent) e o tique do cronômetro
+// (atualizarRestante) precisam concordar no clamp de meia-noite, no fim do dia
+// e na altura mínima — senão o bloco ao vivo colapsa e depois "salta" ao redesenhar.
+function geometriaDoBloco(inicio, fim) {
+  const startH = zDec(inicio);
+  let endH = zDec(fim);
+  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
+  const clampedStart = Math.max(startH, HOUR_START);
+  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
+  return {
+    top: (clampedStart - HOUR_START) * HOUR_HEIGHT,
+    height: Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2),
+  };
 }
-// Chamado a cada segundo: mexe só no DOM, sem redesenhar a grade.
-function atualizarPreenchimento() {
-  if (!state.session) return;
-  document.querySelectorAll('.event-seguindo').forEach(el => {
-    const ev = state.events.find(x => x.id === el.dataset.id);
-    const i = ev && sessaoDe(ev);
-    const fill = el.querySelector('.event-fill');
-    if (!i || !fill) return;
-    fill.style.top = ((i.a - i.ps) / (i.pe - i.ps) * 100) + '%';
-    fill.style.height = ((i.b - i.a) / (i.pe - i.ps) * 100) + '%';
-    const info = el.querySelector('.fill-info-linha');
-    if (info) info.innerHTML = textoPreenchimento(i);
-  });
-  // o preenchimento começa (chegou a hora) ou o trecho extra aparece (passou do fim): redesenha, no máximo a cada 30s
-  const agora = Date.now();
-  if (agora - (state.ultimoRedesenho || 0) > 30000 && !document.querySelector('.arrasto') &&
-      document.querySelectorAll('#new-modal:not(.hidden), #event-modal:not(.hidden)').length === 0) {
-    const src = state.events.find(x => x.id === state.session.sourceEventId);
-    const i = src && sessaoDe(src);
-    if (!!i !== !!state.preenchendo || (i && i.s1 > i.pe)) { state.ultimoRedesenho = agora; renderDayColumns(); }
+
+// A cada segundo, atualiza só o bloco planejado da sessão em andamento.
+function atualizarRestante() {
+  const sess = state.session;
+  if (!sess || !sess.sourceEventId) return;
+  const origem = state.events.find(e => e.id === sess.sourceEventId);
+  if (!origem || origem._kind !== 'planned' || !origem.start.dateTime) return;
+  const el = [...document.querySelectorAll('#day-columns .event')]
+    .find(x => x.dataset.id === origem.id);
+  if (!el) return;
+  const consumido = Tempo.consumoDaAtividade(state.events, sess, origem.id, Date.now());
+  const r = Tempo.recortePlanejado(origem, consumido);
+  if (!r) return;
+  if (r.concluido) {
+    // O evento realizado local nasceu com fim provisório (+30min) e o baterPonto só
+    // atualiza o Google. Antes de redesenhar, acerta o fim local com o tempo realmente
+    // trabalhado — senão o bloco que substitui o planejado mostraria 30min, não o total.
+    const realizado = state.events.find(e => e.id === sess.gEventId);
+    if (realizado && realizado.end) {
+      realizado.end.dateTime =
+        new Date(sess.startedAt + Tempo.decorridoDaSessao(sess, Date.now())).toISOString();
+    }
+    renderDayColumns();
+    return;
   }
+  el.style.height = geometriaDoBloco(r.inicio, r.fimRestante).height + 'px';
+  const rotulo = `${zHm(r.inicio)}–${zHm(r.fimRestante)}`;
+  const t = el.querySelector('.event-time') || el.querySelector('.event-time-inline');
+  if (t) t.textContent = rotulo;
+  const saldo = el.querySelector('.event-resto');
+  if (saldo) saldo.textContent = `${fmtDur(r.consumidoMs)} feita · falta ${fmtDur(r.restanteMs)}`;
 }
 
 function renderEvent(ev, lane = 0, lanes = 1) {
   const start = new Date(ev.start.dateTime || ev.start.date);
   const end = new Date(ev.end.dateTime || ev.end.date || ev.start.dateTime || ev.start.date);
-  const startH = zDec(start);
-  let endH = zDec(end);
-  if (endH <= startH) endH = HOUR_END + 1; // evento que cruza a meia-noite
-  const clampedStart = Math.max(startH, HOUR_START);
-  const clampedEnd = Math.min(Math.max(endH, clampedStart + 0.25), HOUR_END + 1);
-  const top = (clampedStart - HOUR_START) * HOUR_HEIGHT;
-  const height = Math.max(18, (clampedEnd - clampedStart) * HOUR_HEIGHT - 2);
+  const { top, height } = geometriaDoBloco(start, end);
   const width = 100 / lanes;
   const left = lane * width;
   const isActive = state.session && state.session.gEventId === ev.id;
   const timeStr = `${zHm(start)}–${zHm(end)}`;
-  const seguindo = ev._kind === 'planned' ? sessaoDe(ev) : null;
-  const playBtn = (ev._kind === 'planned' && !isActive && !seguindo)
+  const recorte = ev._recorte || null;
+  const restoStr = recorte && recorte.consumidoMs > 0
+    ? `${fmtDur(recorte.consumidoMs)} feita · falta ${fmtDur(recorte.restanteMs)}`
+    : '';
+  const rodandoAqui = !!(state.session && state.session.sourceEventId === ev.id);
+  const playBtn = (ev._kind === 'planned' && !isActive && !rodandoAqui)
     ? `<button class="event-play" data-id="${ev.id}" title="Iniciar sessão real">▶</button>`
     : '';
   // Bloco curto: título e horário na MESMA linha, pra o tempo ficar sempre à vista.
@@ -1358,14 +1375,6 @@ function renderEvent(ev, lane = 0, lanes = 1) {
     estilo = `background:${bg}; color:${fg}; ${tracejado}`;
   }
   if (ev._done) cls += ' event-done';
-  let fillHtml = '', infoHtml = '';
-  if (seguindo) {
-    const topo = (seguindo.a - seguindo.ps) / (seguindo.pe - seguindo.ps) * 100;
-    const alt = (seguindo.b - seguindo.a) / (seguindo.pe - seguindo.ps) * 100;
-    cls += ' event-seguindo' + (topo < 15 && alt > 15 ? ' fill-claro' : '');
-    fillHtml = `<div class="event-fill" style="top:${topo}%; height:${alt}%"></div>`;
-    infoHtml = compact ? '' : `<div class="event-time fill-info-linha">${textoPreenchimento(seguindo)}</div>`;
-  }
 
   return `
     <div class="event ${cls} ${compact ? 'event-compact' : ''}" data-id="${escapeHtml(ev.id)}"
@@ -1373,8 +1382,7 @@ function renderEvent(ev, lane = 0, lanes = 1) {
          title="${escapeHtml((ev.summary||'(sem título)') + ' · ' + timeStr + (ev._source ? ' · ' + ev._source : ''))}">
       <div class="event-title">${ev._kind === 'task' ? (ev._done ? '☑ ' : '☐ ') : ''}${escapeHtml(ev.summary || '(sem título)')}${compact ? `<span class="event-time-inline">${timeStr}</span>` : ''}</div>
       ${compact ? '' : `<div class="event-time">${timeStr}</div>`}
-      ${infoHtml}
-      ${fillHtml}
+      ${restoStr && !compact ? `<div class="event-resto">${restoStr}</div>` : ''}
       ${playBtn}
     </div>
   `;
@@ -2047,13 +2055,45 @@ async function abrirEvento(id) {
     ev.description ? ['Descrição', ev.description] : null,
   ].filter(Boolean);
 
+  // Sessões vinculadas: a sessão realizada não aparece na grade, então o
+  // caminho para ver e apagar é aqui no evento planejado. A sessão em
+  // andamento fica de fora (apagá-la quebraria o cronômetro).
+  const vinculadas = ev._kind === 'planned'
+    ? state.events.filter(x => x._kind === 'realized' && x._origemId === ev.id
+        && x.start.dateTime && x.end.dateTime
+        && !(state.session && x.id === state.session.gEventId))
+    : [];
+
   document.getElementById('event-modal-title').textContent = ev.summary || '(sem título)';
   document.getElementById('event-modal-bar').style.background = corDoEvento(ev);
-  document.getElementById('event-modal-body').innerHTML = linhas.map(([rot, val]) => `
+
+  const sessoesHtml = vinculadas.length ? `
+    <div class="pt-3 mt-3 border-t border-neutral-800">
+      <dt class="text-[11px] uppercase tracking-wider text-neutral-500">Sessões registradas</dt>
+      ${vinculadas.map(s => {
+        const i = new Date(s.start.dateTime), f = new Date(s.end.dateTime);
+        return `<div class="flex items-center justify-between gap-2 py-1 text-neutral-200">
+          <span>${i.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} · ${zHm(i)}–${zHm(f)} · ${fmtDur(f - i)}</span>
+          <button data-apagar-sessao="${escapeHtml(s.id)}" title="Apagar sessão" class="text-red-400 hover:text-red-300 px-2">🗑</button>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  document.getElementById('event-modal-body').innerHTML =
+    linhas.map(([rot, val]) => `
     <div>
       <dt class="text-[11px] uppercase tracking-wider text-neutral-500">${escapeHtml(rot)}</dt>
       <dd class="text-neutral-200 whitespace-pre-wrap break-words">${escapeHtml(val)}</dd>
-    </div>`).join('');
+    </div>`).join('') + sessoesHtml;
+
+  document.querySelectorAll('[data-apagar-sessao]').forEach(b => {
+    b.onclick = async () => {
+      const s = state.events.find(x => x.id === b.dataset.apagarSessao);
+      if (!s) return;
+      fecharEvento();
+      await apagarSessao(s);
+    };
+  });
 
   const link = document.getElementById('event-modal-link');
   if (ev.htmlLink) { link.href = ev.htmlLink; link.style.display = ''; }
@@ -2259,7 +2299,7 @@ function atualizarLinhaAgora() {
 }
 
 function tickTimer() {
-  if (state.session && !state.session.isPaused) { updateTimerDisplay(); atualizarPreenchimento(); }
+  if (state.session && !state.session.isPaused) { updateTimerDisplay(); atualizarRestante(); }
 }
 
 function showOnboarding() {
