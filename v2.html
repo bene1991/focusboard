@@ -542,24 +542,43 @@ function zHm(d) { return zParts(d).hm; }
 function zDec(d) { return zParts(d).dec; }
 
 // ===== Google =====
+// ponytail: popup + postMessage (google.accounts.oauth2) ficava preso sem
+// avisar a página em nada que testamos (Chrome/Safari/incógnito/sem extensão).
+// Trocado por redirect de página inteira — sem janela cruzada, sem mensagem
+// pra se perder. Exige a origem como "URI de redirecionamento autorizado" no
+// Google Cloud Console (Clientes → esse client ID).
 function waitLibs(cb) {
-  if (window.google && window.google.accounts && window.gapi) return cb();
+  if (window.gapi) return cb();
   setTimeout(() => waitLibs(cb), 300);
 }
 
-function criarTokenClient() {
-  state.tokenClient = google.accounts.oauth2.initTokenClient({
+function buildAuthUrl(prompt) {
+  const params = new URLSearchParams({
     client_id: CLIENT_ID,
+    redirect_uri: location.origin + location.pathname,
+    response_type: 'token',
     scope: SCOPE,
-    callback: onToken,
-    // Com várias contas Google no navegador, sem essa dica o Google não consegue
-    // renovar em silêncio e abre o seletor de contas — era o que te derrubava.
-    ...(state.email ? { hint: state.email, select_account: false } : {}),
+    include_granted_scopes: 'true',
+    prompt,
   });
+  if (state.email) params.set('login_hint', state.email);
+  return 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+// Lê o token devolvido no #fragmento da URL ao voltar do Google.
+function consumeAuthRedirect() {
+  if (!location.hash) return null;
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (!params.get('access_token') && !params.get('error')) return null;
+  history.replaceState(null, '', location.pathname + location.search);
+  if (params.get('error')) return 'error';
+  state.token = { access_token: params.get('access_token'), expires_at: Date.now() + (Number(params.get('expires_in')) || 3600) * 1000 };
+  localStorage.setItem('fb2.token', JSON.stringify(state.token));
+  return 'ok';
 }
 
 function initGoogle() {
-  criarTokenClient();
+  const resultado = consumeAuthRedirect();
   gapi.load('client', async () => {
     await gapi.client.init({ discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'] });
     state.gapiReady = true;
@@ -568,16 +587,13 @@ function initGoogle() {
       agendarRenovacao();
       state.conectado = true;
       onConnected();
+    } else if (resultado === 'error') {
+      // Renovação silenciosa falhou (ou você cancelou): não insiste sozinho.
+      state.token = null; localStorage.removeItem('fb2.token');
+      showOnboarding();
     } else if (state.token) {
       // Token vencido, mas você já autorizou antes: renova sem pedir nada.
-      pedirToken(false).catch(() => {
-        // já houve conexão antes: mantém a tela e pede um clique
-        state.conectado = true;
-        document.getElementById('onboarding').classList.add('hidden');
-        document.getElementById('main-view').classList.remove('hidden');
-        renderAll();
-        avisarReconectar(true);
-      });
+      pedirToken(false);
     } else {
       showOnboarding();
     }
@@ -585,48 +601,14 @@ function initGoogle() {
 }
 
 function connectGoogle() {
-  if (!state.tokenClient) { alert('Aguarde bibliotecas carregarem...'); return; }
-  // Primeira vez pede consentimento; depois é silencioso.
-  pedirToken(!state.token).catch(err => alert('Erro na conexão: ' + err.message));
+  pedirToken(true);
 }
 
-// O token do Google dura 1 hora. Em vez de exigir novo login, pedimos outro
-// silenciosamente — sem pop-up, já que o consentimento continua válido.
+// O token do Google dura 1 hora. Renovar e conectar usam o mesmo redirect —
+// a página navega embora e volta com o token no #fragmento.
 function pedirToken(comConsentimento = false) {
-  if (!state.tokenClient) return Promise.reject(new Error('bibliotecas do Google ainda carregando'));
-  if (state.renovando) return state.renovando;
-
-  state.renovando = new Promise((resolve, reject) => {
-    state.tokenResolve = resolve;
-    state.tokenReject = reject;
-    try {
-      state.tokenClient.requestAccessToken({ prompt: comConsentimento ? 'consent' : '' });
-    } catch (e) { reject(e); }
-    // Se o Google não responder (ex.: sessão caiu e o pop-up foi bloqueado),
-    // não deixa a promessa pendurada pra sempre.
-    setTimeout(() => reject(new Error('tempo esgotado ao renovar o acesso')), 45000);
-  }).finally(() => { state.renovando = null; });
-
-  return state.renovando;
-}
-
-function onToken(resp) {
-  if (resp.error) {
-    const err = new Error(resp.error_description || resp.error);
-    if (state.tokenReject) state.tokenReject(err);
-    state.tokenResolve = state.tokenReject = null;
-    return;
-  }
-  state.token = { access_token: resp.access_token, expires_at: Date.now() + (resp.expires_in || 3600) * 1000 };
-  localStorage.setItem('fb2.token', JSON.stringify(state.token));
-  gapi.client.setToken({ access_token: state.token.access_token });
-  agendarRenovacao();
-  avisarReconectar(false);
-
-  const resolver = state.tokenResolve;
-  state.tokenResolve = state.tokenReject = null;
-  if (resolver) resolver(state.token);
-  if (!state.conectado) { state.conectado = true; onConnected(); }
+  location.href = buildAuthUrl(comConsentimento ? 'consent' : 'none');
+  return new Promise(() => {}); // a navegação interrompe a execução antes de resolver
 }
 
 // Renova sozinho pouco antes de expirar, para você nunca esbarrar no vencimento.
