@@ -5,6 +5,8 @@ const {
   consumoDaAtividade,
   recortePlanejado,
   prepararEventosDaGrade,
+  geometriaNaGrade,
+  rotuloDoHorario,
 } = require('../tempo.js');
 
 const MIN = 60000;
@@ -99,4 +101,16 @@ test('grade mantém visível a sessão finalizada vinculada ao planejado', () =>
 
   assert.deepEqual(visiveis.map(ev => ev.id), ['p1', 'r1']);
   assert.equal(visiveis[0]._recorte.restanteMs, 90 * MIN);
+});
+
+test('sessão de poucos segundos no mesmo minuto usa somente a altura mínima', () => {
+  const geometria = geometriaNaGrade(9 + 37 / 60, 9 + 37 / 60, false, 4, 22, 68);
+
+  assert.equal(geometria.height, 18);
+  assert.ok(geometria.height < 68);
+});
+
+test('sessão em andamento mostra agora em vez de repetir o mesmo minuto', () => {
+  assert.equal(rotuloDoHorario('09:37', '09:37', true), '09:37–agora');
+  assert.equal(rotuloDoHorario('09:37', '09:42', false), '09:37–09:42');
 });

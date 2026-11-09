@@ -79,11 +79,29 @@
     return visiveis;
   }
 
+  // Geometria vertical da grade. Horários iguais no mesmo dia representam uma
+  // sessão de poucos segundos/minutos, não um evento atravessando a meia-noite.
+  function geometriaNaGrade(startH, endH, cruzaDia, hourStart, hourEnd, hourHeight) {
+    const fim = cruzaDia && endH <= startH ? hourEnd + 1 : endH;
+    const clampedStart = Math.max(startH, hourStart);
+    const clampedEnd = Math.min(Math.max(fim, clampedStart + 0.25), hourEnd + 1);
+    return {
+      top: (clampedStart - hourStart) * hourHeight,
+      height: Math.max(18, (clampedEnd - clampedStart) * hourHeight - 2),
+    };
+  }
+
+  function rotuloDoHorario(inicio, fim, ativo) {
+    return ativo ? `${inicio}–agora` : `${inicio}–${fim}`;
+  }
+
   const api = {
     decorridoDaSessao,
     consumoDaAtividade,
     recortePlanejado,
     prepararEventosDaGrade,
+    geometriaNaGrade,
+    rotuloDoHorario,
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else raiz.Tempo = api;
